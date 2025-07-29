@@ -606,7 +606,7 @@ style.textContent = `
     }
     .btn-primary:hover {
         background-color: #4f46e5; /* indigo-600 */
-    }
+    }  
     .btn-primary:disabled {
         background-color: #4338ca; /* indigo-800 */
         cursor: not-allowed;
