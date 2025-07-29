@@ -1,26 +1,29 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection } from 'firebase/firestore';
-import { ArrowLeft, Lightbulb, BrainCircuit, CheckCircle, Award, Menu, X, User, Bot, Loader2, RefreshCw } from 'lucide-react';
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, getDocs, query } from 'firebase/firestore';
+import { ArrowLeft, Lightbulb, BrainCircuit, CheckCircle, Award, Menu, X, User, Bot, Loader2, RefreshCw, AlertTriangle, Terminal, Send } from 'lucide-react';
 
-// --- Firebase Configuration ---
-// This configuration is provided by the environment.
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-coding-mentor';
+// --- Environment Variable Configuration ---
+const firebaseConfigString = import.meta.env.VITE_FIREBASE_CONFIG;
+const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const appId = import.meta.env.VITE_APP_ID || 'default-coding-mentor';
+let firebaseConfig = {};
+let configError = null;
 
-// --- App Data ---
-const problems = [
-    { id: 'p1_fizzbuzz', phase: 1, title: 'FizzBuzz', difficulty: 'Easy', companies: ['Google', 'Amazon', 'Microsoft'], description: 'Given an integer n, for each integer i in the range [1, n], print "Fizz" if i is divisible by 3, "Buzz" if i is divisible by 5, and "FizzBuzz" if i is divisible by both 3 and 5. If none of these conditions are true, print the number i itself.', starterCode: 'class Solution {\n    public void solve(int n) {\n        // Your logic here\n    }\n}' },
-    { id: 'p2_two_sum', phase: 1, title: 'Two Sum', difficulty: 'Easy', companies: ['Google', 'Facebook', 'Amazon'], description: 'Given an array of integers `nums` and an integer `target`, return indices of the two numbers such that they add up to `target`. You may assume that each input would have exactly one solution, and you may not use the same element twice.', starterCode: 'class Solution {\n    public int[] solve(int[] nums, int target) {\n        // Your logic here\n        return new int[]{};\n    }\n}' },
-    { id: 'p3_reverse_string', phase: 1, title: 'Reverse a String', difficulty: 'Easy', companies: ['Apple', 'Oracle', 'IBM'], description: 'Write a function that reverses a string. The input string is given as an array of characters `s`. You must do this by modifying the input array in-place with O(1) extra memory.', starterCode: 'class Solution {\n    public void solve(char[] s) {\n        // Your logic here\n    }\n}' },
-     { id: 'p4_palindrome', phase: 2, title: 'Valid Palindrome', difficulty: 'Easy', companies: ['Microsoft', 'Facebook'], description: 'A phrase is a palindrome if, after converting all uppercase letters into lowercase letters and removing all non-alphanumeric characters, it reads the same forward and backward. Given a string s, return true if it is a palindrome, or false otherwise.', starterCode: 'class Solution {\n    public boolean solve(String s) {\n        // Your logic here\n        return false;\n    }\n}' },
-];
-
-const phases = [
-    { id: 1, name: 'Phase 1: The Foundations', description: 'Mastering the absolute basics of logic, loops, and arrays.' },
-    { id: 2, name: 'Phase 2: Core Patterns', description: 'Recognizing common patterns like two-pointers and basic string manipulation.' },
-];
+try {
+    if (firebaseConfigString) {
+        firebaseConfig = JSON.parse(firebaseConfigString);
+    } else {
+        configError = "VITE_FIREBASE_CONFIG is missing.";
+    }
+    if (!geminiApiKey) {
+        configError = "VITE_GEMINI_API_KEY is missing.";
+    }
+} catch (e) {
+    console.error("Failed to parse Firebase config:", e);
+    configError = "VITE_FIREBASE_CONFIG is not valid JSON. Please check the value in your Vercel settings.";
+}
 
 // --- Main App Component ---
 export default function App() {
@@ -28,11 +31,17 @@ export default function App() {
     const [selectedProblem, setSelectedProblem] = useState(null);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     
+    // --- App Data State ---
+    const [problems, setProblems] = useState([]);
+    const [phases, setPhases] = useState([]);
+    const [isLoadingData, setIsLoadingData] = useState(true);
+
     // --- Firebase State ---
     const [auth, setAuth] = useState(null);
     const [db, setDb] = useState(null);
     const [userId, setUserId] = useState(null);
     const [isAuthReady, setIsAuthReady] = useState(false);
+    const [initError, setInitError] = useState(null);
     const [progress, setProgress] = useState({});
 
     // --- Sidebar Resizing State ---
@@ -41,44 +50,81 @@ export default function App() {
 
     // --- Firebase Initialization and Auth ---
     useEffect(() => {
+        if (configError) {
+            setInitError(configError);
+            return;
+        }
         if (Object.keys(firebaseConfig).length > 0) {
-            const app = initializeApp(firebaseConfig);
-            const authInstance = getAuth(app);
-            const dbInstance = getFirestore(app);
-            setAuth(authInstance);
-            setDb(dbInstance);
+            try {
+                const app = initializeApp(firebaseConfig);
+                const authInstance = getAuth(app);
+                const dbInstance = getFirestore(app);
+                setAuth(authInstance);
+                setDb(dbInstance);
 
-            const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
-                if (user) {
-                    setUserId(user.uid);
-                } else {
-                    try {
+                const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
+                    if (user) {
+                        setUserId(user.uid);
+                    } else {
                         await signInAnonymously(authInstance);
-                    } catch (error) {
-                        console.error("Anonymous sign-in failed:", error);
                     }
-                }
-                if(authInstance.currentUser){
-                    setUserId(authInstance.currentUser.uid);
-                }
-                setIsAuthReady(true);
-            });
-            return () => unsubscribe();
+                    if(authInstance.currentUser){
+                        setUserId(authInstance.currentUser.uid);
+                    }
+                    setIsAuthReady(true);
+                });
+                return () => unsubscribe();
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                setInitError(`Firebase initialization failed: ${error.message}. This is often caused by incorrect Firebase config values.`);
+            }
         }
     }, []);
 
     // --- Firestore Data Fetching ---
     useEffect(() => {
         if (isAuthReady && db && userId) {
+            // Fetch public problems and phases
+            const fetchData = async () => {
+                try {
+                    const problemsQuery = query(collection(db, "problems"));
+                    const phasesQuery = query(collection(db, "phases"));
+                    
+                    const [problemsSnapshot, phasesSnapshot] = await Promise.all([
+                        getDocs(problemsQuery),
+                        getDocs(phasesQuery)
+                    ]);
+
+                    const problemsData = problemsSnapshot.docs.map(doc => doc.data());
+                    const phasesData = phasesSnapshot.docs.map(doc => doc.data());
+                    
+                    // Sort phases by ID
+                    phasesData.sort((a, b) => a.id - b.id);
+
+                    setProblems(problemsData);
+                    setPhases(phasesData);
+                } catch (error) {
+                     console.error("Error fetching public data:", error);
+                     setInitError(`Failed to fetch problems/phases. Check your Firestore security rules. Error: ${error.message}`);
+                } finally {
+                    setIsLoadingData(false);
+                }
+            };
+            fetchData();
+
+            // Listen for user progress
             const progressColRef = collection(db, `artifacts/${appId}/users/${userId}/progress`);
-            const unsubscribe = onSnapshot(progressColRef, (snapshot) => {
+            const unsubscribeProgress = onSnapshot(progressColRef, (snapshot) => {
                 const newProgress = {};
                 snapshot.forEach(doc => {
                     newProgress[doc.id] = doc.data();
                 });
                 setProgress(newProgress);
+            }, (error) => {
+                console.error("Firestore progress snapshot error:", error);
+                setInitError(`Failed to listen to progress. Check your Firestore security rules. Error: ${error.message}`);
             });
-            return () => unsubscribe();
+            return () => unsubscribeProgress();
         }
     }, [isAuthReady, db, userId]);
 
@@ -122,8 +168,27 @@ export default function App() {
         setIsMenuOpen(false);
     };
 
-    if (!isAuthReady || !db) {
-        return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin h-10 w-10" /></div>;
+    // --- Configuration Check ---
+    if (initError) {
+        return (
+            <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white p-8">
+                <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-8 max-w-3xl">
+                    <div className="text-center">
+                        <AlertTriangle className="mx-auto h-12 w-12 text-red-500 mb-4" />
+                        <h1 className="text-2xl font-bold text-red-400 mb-4">Application Error</h1>
+                    </div>
+                    <div className="text-left space-y-4 mt-4">
+                        <p className="text-gray-300"><strong className="text-yellow-400">Error Details:</strong></p>
+                        <pre className="bg-gray-800 p-4 rounded-lg text-sm text-red-300 whitespace-pre-wrap">{initError}</pre>
+                        <p className="text-gray-300"><strong className="text-yellow-400">How to Fix:</strong> Please follow the debugging guides to verify your Vercel environment variables and Firebase security rules, then redeploy.</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+    
+    if (!isAuthReady || !db || isLoadingData) {
+        return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin h-10 w-10" /> Initializing...</div>;
     }
 
     const Sidebar = ({ width }) => (
@@ -140,8 +205,8 @@ export default function App() {
                 </button>
                 <div className="mt-4">
                     <h2 className="text-sm font-semibold text-gray-400 uppercase px-3 mb-2">Problems</h2>
-                    {problems.map(p => (
-                        <button key={p.id} onClick={() => navigateToProblem(p)} className={`w-full text-left flex items-center gap-3 p-3 rounded-lg text-sm ${selectedProblem?.id === p.id ? 'bg-indigo-500/20 text-indigo-300' : 'hover:bg-gray-700'}`}>
+                    {problems.map((p, index) => (
+                        <button key={p.id ?? index} onClick={() => navigateToProblem(p)} className={`w-full text-left flex items-center gap-3 p-3 rounded-lg text-sm ${selectedProblem?.id === p.id ? 'bg-indigo-500/20 text-indigo-300' : 'hover:bg-gray-700'}`}>
                             {progress[p.id]?.status === 'completed' ? <CheckCircle className="h-4 w-4 text-green-400" /> : <div className="h-4 w-4" />}
                             <span className="truncate">{p.title}</span>
                         </button>
@@ -177,7 +242,7 @@ export default function App() {
                     </button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-                    {page === 'dashboard' && <Dashboard navigateToProblem={navigateToProblem} progress={progress} />}
+                    {page === 'dashboard' && <Dashboard navigateToProblem={navigateToProblem} progress={progress} problems={problems} phases={phases} />}
                     {page === 'problem' && selectedProblem && <ProblemView problem={selectedProblem} onBack={navigateToDashboard} db={db} userId={userId} progressData={progress[selectedProblem.id]} />}
                 </div>
             </main>
@@ -186,19 +251,19 @@ export default function App() {
 }
 
 // --- Dashboard Component ---
-function Dashboard({ navigateToProblem, progress }) {
+function Dashboard({ navigateToProblem, progress, problems, phases }) {
     return (
         <div>
             <h1 className="text-4xl font-bold text-white mb-2">Welcome Back</h1>
             <p className="text-lg text-gray-400 mb-10">Let's rebuild your logical thinking, one step at a time. Your journey starts now.</p>
             
-            {phases.map(phase => (
-                <div key={phase.id} className="mb-8">
+            {phases.map((phase, index) => (
+                <div key={phase.id ?? index} className="mb-8">
                     <h2 className="text-2xl font-semibold text-indigo-400 mb-2">{phase.name}</h2>
                     <p className="text-gray-400 mb-4">{phase.description}</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {problems.filter(p => p.phase === phase.id).map(p => (
-                            <ProblemCard key={p.id} problem={p} onSelect={navigateToProblem} status={progress[p.id]?.status} />
+                        {problems.filter(p => p.phase === phase.id).map((p, idx) => (
+                            <ProblemCard key={p.id ?? idx} problem={p} onSelect={navigateToProblem} status={progress[p.id]?.status} />
                         ))}
                     </div>
                 </div>
@@ -281,9 +346,11 @@ const ResizablePanels = ({ leftPanel, rightPanel }) => {
 function ProblemView({ problem, onBack, db, userId, progressData }) {
     const [activeTab, setActiveTab] = useState('understand');
     const [notes, setNotes] = useState({ understand: '', plan: '', execute: problem.starterCode, review: '' });
-    const [mentorFeedback, setMentorFeedback] = useState('');
+    const [chatMessages, setChatMessages] = useState([]);
+    const [chatInput, setChatInput] = useState('');
     const [isThinking, setIsThinking] = useState(false);
     const isCompleted = progressData?.status === 'completed';
+    const chatEndRef = useRef(null);
 
     useEffect(() => {
         setNotes({
@@ -292,8 +359,12 @@ function ProblemView({ problem, onBack, db, userId, progressData }) {
             execute: progressData?.execute || problem.starterCode,
             review: progressData?.review || '',
         });
-        setMentorFeedback('');
+        setChatMessages([]);
     }, [problem, progressData]);
+
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [chatMessages]);
 
     const handleNoteChange = (tab, value) => {
         if (isCompleted) return;
@@ -320,10 +391,14 @@ function ProblemView({ problem, onBack, db, userId, progressData }) {
     };
     
     const handleCompletion = async () => {
+        if (notes.execute.trim() === problem.starterCode.trim()) {
+             setChatMessages(prev => [...prev, { sender: 'bot', text: "It looks like you haven't written any code yet. Please try solving the problem in the 'Execute' tab before asking for a review." }]);
+            return;
+        }
+
         setIsThinking(true);
-        setMentorFeedback('');
         const feedback = await reviewCode(notes.execute);
-        setMentorFeedback(feedback);
+        setChatMessages(prev => [...prev, { sender: 'bot', text: feedback }]);
         setIsThinking(false);
         saveProgress(notes, 'completed');
     };
@@ -334,12 +409,23 @@ function ProblemView({ problem, onBack, db, userId, progressData }) {
         saveProgress(clearedNotes, 'in-progress');
     };
 
-    const getHint = async () => {
+    const handleSendMessage = async () => {
+        if (!chatInput.trim() || isThinking) return;
+
+        const newMessages = [...chatMessages, { sender: 'user', text: chatInput }];
+        setChatMessages(newMessages);
+        setChatInput('');
         setIsThinking(true);
-        setMentorFeedback('');
-        const prompt = `You are a coding mentor. The user is stuck on the following problem: "${problem.description}". Their current plan is: "${notes.plan}". Provide one concise, high-level hint to guide them. Do not give away the solution. Frame your response as a gentle suggestion.`;
-        const feedback = await callGemini(prompt);
-        setMentorFeedback(feedback);
+
+        const prompt = `You are a Socratic coding mentor. The user is working on a problem.
+        Problem Description: "${problem.description}"
+        Their current code is: \`\`\`java\n${notes.execute}\n\`\`\`
+        The user's question is: "${chatInput}"
+        
+        Your task is to guide them without giving the direct answer. Ask leading questions, suggest concepts to research, or point out potential logical flaws in their current code. Keep your response concise and encouraging.`;
+
+        const response = await callGemini(prompt);
+        setChatMessages(prev => [...prev, { sender: 'bot', text: response }]);
         setIsThinking(false);
     };
 
@@ -349,8 +435,10 @@ function ProblemView({ problem, onBack, db, userId, progressData }) {
     };
 
     const callGemini = async (prompt) => {
-        const apiKey = ""; // Leave empty
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        if (!geminiApiKey) {
+            return "Error: VITE_GEMINI_API_KEY is not configured.";
+        }
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`;
         const payload = { contents: [{ parts: [{ text: prompt }] }] };
 
         try {
@@ -383,17 +471,52 @@ function ProblemView({ problem, onBack, db, userId, progressData }) {
                 </button>
                 <h2 className="text-3xl font-bold text-white mb-2">{problem.title}</h2>
                 <p className="text-gray-400 mb-6">{problem.description}</p>
-            </div>
-            {mentorFeedback || isThinking ? (
-                <div className="bg-gray-800 p-4 rounded-lg mt-6">
-                    <h3 className="font-semibold text-indigo-400 flex items-center gap-2 mb-2"><Bot /> Mentor Feedback</h3>
-                    {isThinking ? (
-                         <div className="flex items-center gap-2 text-gray-400"><Loader2 className="animate-spin h-5 w-5" /> Thinking...</div>
-                    ) : (
-                        <div className="prose prose-invert prose-sm max-w-none" dangerouslySetInnerHTML={{__html: mentorFeedback.replace(/\n/g, '<br />')}}></div>
-                    )}
+                
+                <h3 className="text-lg font-semibold text-indigo-400 flex items-center gap-2 mb-2"><Terminal /> Test Cases</h3>
+                <div className="space-y-3">
+                    {problem.testCases?.map((tc, index) => (
+                        <div key={index} className="bg-gray-800 p-3 rounded-md text-sm">
+                            <p className="font-mono text-gray-400">Input: <span className="text-cyan-300">{tc.input}</span></p>
+                            <p className="font-mono text-gray-400">Expected Output: <span className="text-green-300">{tc.expectedOutput}</span></p>
+                        </div>
+                    ))}
                 </div>
-            ) : null}
+            </div>
+            <div className="bg-gray-800 p-4 rounded-lg mt-6 flex-shrink-0">
+                <h3 className="font-semibold text-indigo-400 flex items-center gap-2 mb-2"><Bot /> Mentor Chat</h3>
+                <div className="h-48 overflow-y-auto bg-gray-900/50 p-2 rounded-md space-y-3">
+                    {chatMessages.map((msg, index) => (
+                        <div key={index} className={`flex items-start gap-2 ${msg.sender === 'user' ? 'justify-end' : ''}`}>
+                            {msg.sender === 'bot' && <Bot className="h-5 w-5 text-indigo-400 flex-shrink-0 mt-1" />}
+                            <div className={`p-3 rounded-lg max-w-xs lg:max-w-md ${msg.sender === 'user' ? 'bg-indigo-500 text-white' : 'bg-gray-700'}`}>
+                                <div className="prose prose-invert prose-sm max-w-none" dangerouslySetInnerHTML={{__html: msg.text.replace(/\n/g, '<br />')}}></div>
+                            </div>
+                            {msg.sender === 'user' && <User className="h-5 w-5 text-gray-400 flex-shrink-0 mt-1" />}
+                        </div>
+                    ))}
+                    {isThinking && (
+                         <div className="flex items-start gap-2">
+                             <Bot className="h-5 w-5 text-indigo-400 flex-shrink-0 mt-1" />
+                             <div className="p-3 rounded-lg bg-gray-700">
+                                <Loader2 className="animate-spin h-5 w-5" />
+                             </div>
+                         </div>
+                    )}
+                    <div ref={chatEndRef} />
+                </div>
+                <div className="mt-2 flex gap-2">
+                    <input 
+                        type="text"
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                        placeholder="Ask a question..."
+                        className="flex-1 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        disabled={isThinking}
+                    />
+                    <button onClick={handleSendMessage} disabled={isThinking} className="btn-secondary px-3"><Send size={16} /></button>
+                </div>
+            </div>
         </div>
     );
 
@@ -414,7 +537,6 @@ function ProblemView({ problem, onBack, db, userId, progressData }) {
                 {activeTab === 'review' && <Editor value={notes.review} onChange={(e) => handleNoteChange('review', e.target.value)} placeholder="How did you test your code? What inputs did you use? Did you find any bugs?" disabled={isCompleted} />}
             </div>
             <div className="p-4 border-t border-gray-700 flex flex-wrap gap-2 justify-end">
-                {!isCompleted && activeTab === 'plan' && <button onClick={getHint} disabled={isThinking} className="btn-secondary"><Lightbulb size={16} /> Get a Hint</button>}
                 {isCompleted ? (
                     <button onClick={reattemptProblem} className="btn-secondary"><RefreshCw size={16} /> Re-attempt</button>
                 ) : (
