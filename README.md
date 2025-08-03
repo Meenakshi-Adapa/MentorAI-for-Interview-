@@ -2,7 +2,8 @@
 
 An interactive, AI-powered platform designed to help users rebuild their logical thinking and prepare for technical interviews. This application provides a structured learning path with classic coding problems, an integrated AI mentor for hints and code reviews, and a persistent workspace to track progress.
 
-![AI Coding Mentor Screenshot](https://placehold.co/800x400/2d3748/e2e8f0?text=AI+Coding+Mentor+UI)
+![AI Coding Mentor Screenshot](<img width="1895" height="891" alt="image" src="https://github.com/user-attachments/assets/9aa21a1e-9e6c-420f-957b-64f049dc4b06" />
+)
 
 ## Features
 
