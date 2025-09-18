@@ -1,637 +1,540 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, getDocs, query } from 'firebase/firestore';
-import { ArrowLeft, Lightbulb, BrainCircuit, CheckCircle, Award, Menu, X, User, Bot, Loader2, RefreshCw, AlertTriangle, Terminal, Send } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
-// --- Environment Variable Configuration ---
-const firebaseConfigString = import.meta.env.VITE_FIREBASE_CONFIG;
-const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
-const appId = import.meta.env.VITE_APP_ID || 'default-coding-mentor';
-let firebaseConfig = {};
-let configError = null;
+// --- MOCK DATA ---
+const mockRecipes = [
+  {
+    id: 1,
+    title: 'Classic Spaghetti Bolognese',
+    image: 'https://images.unsplash.com/photo-1589227365533-5f830a79a378?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1287&q=80',
+    time: 45,
+    ingredients: ['pasta', 'onion', 'tomato', 'ground beef', 'garlic'],
+    steps: [
+      "Heat olive oil in a large skillet over medium-high heat. Add onion and garlic; cook and stir until softened, about 5 minutes.",
+      "Add ground beef and cook until browned and crumbly, 5 to 7 minutes. Drain excess grease.",
+      "Stir in crushed tomatoes, tomato paste, water, sugar, basil, oregano, salt, and pepper. Bring to a simmer, then reduce heat to low, cover, and let simmer for at least 1 hour, stirring occasionally.",
+      "Meanwhile, bring a large pot of lightly salted water to a boil. Cook spaghetti in the boiling water, stirring occasionally, until tender yet firm to the bite, about 12 minutes. Drain.",
+      "Serve sauce over hot spaghetti."
+    ],
+  },
+  {
+    id: 2,
+    title: 'Tomato and Onion Bruschetta',
+    image: 'https://images.unsplash.com/photo-1505253716362-afb74bf60d44?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80',
+    time: 20,
+    ingredients: ['tomato', 'onion', 'bread', 'garlic', 'basil'],
+    steps: [
+        "Preheat your oven's broiler.",
+        "Combine diced tomatoes, chopped onion, minced garlic, and fresh basil in a medium bowl.",
+        "Drizzle with olive oil and season with salt and pepper to taste. Let it sit for about 10 minutes for the flavors to meld.",
+        "Slice the bread into 1/2-inch thick slices. Arrange on a baking sheet.",
+        "Broil for 1 to 2 minutes per side, or until lightly golden.",
+        "Rub one side of each toast slice with the cut side of a garlic clove.",
+        "Top the toasted bread with the tomato mixture and serve immediately."
+    ],
+  },
+  {
+    id: 3,
+    title: 'Simple Chicken Curry',
+    image: 'https://images.unsplash.com/photo-1598515214211-89d3c7373094?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1319&q=80',
+    time: 35,
+    ingredients: ['chicken', 'onion', 'tomato', 'ginger', 'garlic', 'curry powder'],
+    steps: [
+        "Heat oil in a large pot or Dutch oven over medium heat.",
+        "Add chopped onion and cook until soft and translucent.",
+        "Stir in minced garlic and grated ginger, and cook for another minute until fragrant.",
+        "Add chicken pieces and sear on all sides.",
+        "Sprinkle in curry powder, turmeric, and cumin. Stir to coat the chicken.",
+        "Pour in chopped tomatoes and coconut milk. Season with salt.",
+        "Bring to a simmer, then reduce heat, cover, and cook for 20-25 minutes, or until chicken is cooked through. Garnish with cilantro before serving."
+    ],
+  },
+    {
+    id: 4,
+    title: 'Hearty Lentil Soup',
+    image: 'https://images.unsplash.com/photo-1623059521999-95213c3a9a5f?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1287&q=80',
+    time: 50,
+    ingredients: ['lentils', 'onion', 'carrot', 'celery', 'tomato', 'garlic'],
+    steps: [
+        "Heat olive oil in a large pot or Dutch oven over medium heat.",
+        "Add chopped onion, carrots, and celery. Cook until softened, about 5-7 minutes.",
+        "Add minced garlic and cook for another minute until fragrant.",
+        "Stir in rinsed lentils, diced tomatoes, vegetable broth, and dried thyme.",
+        "Bring to a boil, then reduce heat and simmer for 30-40 minutes, or until lentils are tender.",
+        "Season with salt and pepper to taste. For a creamier soup, you can use an immersion blender for a few seconds.",
+        "Serve hot, garnished with fresh parsley."
+    ],
+  }
+];
 
-try {
-    if (firebaseConfigString) {
-        firebaseConfig = JSON.parse(firebaseConfigString);
-    } else {
-        configError = "VITE_FIREBASE_CONFIG is missing.";
-    }
-    if (!geminiApiKey) {
-        configError = "VITE_GEMINI_API_KEY is missing.";
-    }
-} catch (e) {
-    console.error("Failed to parse Firebase config:", e);
-    configError = "VITE_FIREBASE_CONFIG is not valid JSON. Please check the value in your Vercel settings.";
-}
+// --- UI Components ---
+const Card = ({ children, className = '' }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: -20 }}
+    transition={{ duration: 0.3 }}
+    className={`bg-gray-800 rounded-xl shadow-lg overflow-hidden ${className}`}
+  >
+    {children}
+  </motion.div>
+);
 
-// --- Main App Component ---
+const Button = ({ children, onClick, className = '', type = 'button' }) => (
+  <motion.button
+    whileHover={{ scale: 1.05, filter: 'brightness(1.1)' }}
+    whileTap={{ scale: 0.95 }}
+    onClick={onClick}
+    type={type}
+    className={`px-6 py-3 font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-opacity-75 transition-all duration-200 ${className}`}
+  >
+    {children}
+  </motion.button>
+);
+
+const Input = (props) => (
+    <input
+        {...props}
+        className={`w-full px-4 py-3 text-lg text-gray-200 bg-gray-700 border-2 border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent ${props.className}`}
+    />
+);
+
+const Tag = ({ text }) => (
+    <span className="inline-block bg-gray-700 rounded-full px-3 py-1 text-sm font-semibold text-gray-300 mr-2 mb-2">
+        #{text}
+    </span>
+);
+
+const Notification = ({ message }) => (
+    <motion.div
+        initial={{ opacity: 0, y: 50, scale: 0.3 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.5, transition: { duration: 0.2 } }}
+        className="fixed bottom-10 right-10 z-50 p-4 rounded-lg shadow-lg bg-emerald-500 text-white font-semibold"
+    >
+        {message}
+    </motion.div>
+);
+
+// --- Main App ---
 export default function App() {
-    const [page, setPage] = useState('dashboard'); // dashboard, problem
-    const [selectedProblem, setSelectedProblem] = useState(null);
-    const [isMenuOpen, setIsMenuOpen] = useState(false);
-    
-    // --- App Data State ---
-    const [problems, setProblems] = useState([]);
-    const [phases, setPhases] = useState([]);
-    const [isLoadingData, setIsLoadingData] = useState(true);
+  const [page, setPage] = useState('login'); // login, home, recipe, grocery
+  const [selectedRecipe, setSelectedRecipe] = useState(null);
+  const [ingredientsInput, setIngredientsInput] = useState('');
+  const [suggestedRecipes, setSuggestedRecipes] = useState([]);
+  const [groceryList, setGroceryList] = useState([]);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [notification, setNotification] = useState('');
 
-    // --- Firebase State ---
-    const [auth, setAuth] = useState(null);
-    const [db, setDb] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [isAuthReady, setIsAuthReady] = useState(false);
-    const [initError, setInitError] = useState(null);
-    const [progress, setProgress] = useState({});
+  // WOW Factor State
+  const [isCooking, setIsCooking] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [cookingMessage, setCookingMessage] = useState('');
+  
+  const recognitionRef = useRef(null);
 
-    // --- Sidebar Resizing State ---
-    const [sidebarWidth, setSidebarWidth] = useState(288); // Default width (w-72)
-    const isResizingSidebar = useRef(false);
-
-    // --- Firebase Initialization and Auth ---
-    useEffect(() => {
-        if (configError) {
-            setInitError(configError);
-            return;
-        }
-        if (Object.keys(firebaseConfig).length > 0) {
-            try {
-                const app = initializeApp(firebaseConfig);
-                const authInstance = getAuth(app);
-                const dbInstance = getFirestore(app);
-                setAuth(authInstance);
-                setDb(dbInstance);
-
-                const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
-                    if (user) {
-                        setUserId(user.uid);
-                    } else {
-                        await signInAnonymously(authInstance);
-                    }
-                    if(authInstance.currentUser){
-                        setUserId(authInstance.currentUser.uid);
-                    }
-                    setIsAuthReady(true);
-                });
-                return () => unsubscribe();
-            } catch (error) {
-                console.error("Firebase initialization failed:", error);
-                setInitError(`Firebase initialization failed: ${error.message}. This is often caused by incorrect Firebase config values.`);
-            }
-        }
-    }, []);
-
-    // --- Firestore Data Fetching ---
-    useEffect(() => {
-        if (isAuthReady && db && userId) {
-            // Fetch public problems and phases
-            const fetchData = async () => {
-                try {
-                    const problemsQuery = query(collection(db, "problems"));
-                    const phasesQuery = query(collection(db, "phases"));
-                    
-                    const [problemsSnapshot, phasesSnapshot] = await Promise.all([
-                        getDocs(problemsQuery),
-                        getDocs(phasesQuery)
-                    ]);
-
-                    const problemsData = problemsSnapshot.docs.map(doc => doc.data());
-                    const phasesData = phasesSnapshot.docs.map(doc => doc.data());
-                    
-                    // Sort phases by ID
-                    phasesData.sort((a, b) => a.id - b.id);
-
-                    setProblems(problemsData);
-                    setPhases(phasesData);
-                } catch (error) {
-                     console.error("Error fetching public data:", error);
-                     setInitError(`Failed to fetch problems/phases. Check your Firestore security rules. Error: ${error.message}`);
-                } finally {
-                    setIsLoadingData(false);
-                }
-            };
-            fetchData();
-
-            // Listen for user progress
-            const progressColRef = collection(db, `artifacts/${appId}/users/${userId}/progress`);
-            const unsubscribeProgress = onSnapshot(progressColRef, (snapshot) => {
-                const newProgress = {};
-                snapshot.forEach(doc => {
-                    newProgress[doc.id] = doc.data();
-                });
-                setProgress(newProgress);
-            }, (error) => {
-                console.error("Firestore progress snapshot error:", error);
-                setInitError(`Failed to listen to progress. Check your Firestore security rules. Error: ${error.message}`);
-            });
-            return () => unsubscribeProgress();
-        }
-    }, [isAuthReady, db, userId]);
-
-    const handleSidebarMouseDown = (e) => {
-        e.preventDefault();
-        isResizingSidebar.current = true;
-        document.body.style.cursor = 'col-resize';
-    };
-
-    const handleSidebarMouseUp = useCallback(() => {
-        isResizingSidebar.current = false;
-        document.body.style.cursor = 'default';
-    }, []);
-
-    const handleSidebarMouseMove = useCallback((e) => {
-        if (!isResizingSidebar.current) return;
-        const newWidth = e.clientX;
-        if (newWidth >= 240 && newWidth <= 500) { // Min/max width constraints
-            setSidebarWidth(newWidth);
-        }
-    }, []);
-
-    useEffect(() => {
-        window.addEventListener('mousemove', handleSidebarMouseMove);
-        window.addEventListener('mouseup', handleSidebarMouseUp);
-        return () => {
-            window.removeEventListener('mousemove', handleSidebarMouseMove);
-            window.removeEventListener('mouseup', handleSidebarMouseUp);
-        };
-    }, [handleSidebarMouseMove, handleSidebarMouseUp]);
-
-    const navigateToProblem = (problem) => {
-        setSelectedProblem(problem);
-        setPage('problem');
-        setIsMenuOpen(false);
-    };
-
-    const navigateToDashboard = () => {
-        setSelectedProblem(null);
-        setPage('dashboard');
-        setIsMenuOpen(false);
-    };
-
-    // --- Configuration Check ---
-    if (initError) {
-        return (
-            <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white p-8">
-                <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-8 max-w-3xl">
-                    <div className="text-center">
-                        <AlertTriangle className="mx-auto h-12 w-12 text-red-500 mb-4" />
-                        <h1 className="text-2xl font-bold text-red-400 mb-4">Application Error</h1>
-                    </div>
-                    <div className="text-left space-y-4 mt-4">
-                        <p className="text-gray-300"><strong className="text-yellow-400">Error Details:</strong></p>
-                        <pre className="bg-gray-800 p-4 rounded-lg text-sm text-red-300 whitespace-pre-wrap">{initError}</pre>
-                        <p className="text-gray-300"><strong className="text-yellow-400">How to Fix:</strong> Please follow the debugging guides to verify your Vercel environment variables and Firebase security rules, then redeploy.</p>
-                    </div>
-                </div>
-            </div>
-        );
+  useEffect(() => {
+    const loggedIn = localStorage.getItem('smart-recipe-auth') === 'true';
+    if (loggedIn) {
+      setIsAuthenticated(true);
+      setPage('home');
     }
-    
-    if (!isAuthReady || !db || isLoadingData) {
-        return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin h-10 w-10" /> Initializing...</div>;
+    const savedList = JSON.parse(localStorage.getItem('smart-recipe-grocery')) || [];
+    setGroceryList(savedList);
+  }, []);
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    localStorage.setItem('smart-recipe-auth', 'true');
+    setIsAuthenticated(true);
+    setPage('home');
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('smart-recipe-auth');
+    setIsAuthenticated(false);
+    setPage('login');
+  };
+
+  const handleIngredientSearch = () => {
+    if (!ingredientsInput.trim()) {
+        setSuggestedRecipes(mockRecipes);
+        return;
     }
-
-    const Sidebar = ({ width }) => (
-        <aside style={{ width: `${width}px` }} className={`fixed top-0 left-0 h-full bg-gray-900 text-white p-6 transform ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 transition-transform duration-300 ease-in-out z-30 flex-shrink-0`}>
-             <div className="flex justify-between items-center mb-8">
-                <h1 className="text-2xl font-bold text-indigo-400 flex items-center gap-2 overflow-hidden"><BrainCircuit /> <span className="truncate">Mentor</span></h1>
-                <button onClick={() => setIsMenuOpen(false)} className="md:hidden text-gray-400 hover:text-white">
-                    <X />
-                </button>
-            </div>
-            <nav className="flex flex-col gap-4">
-                <button onClick={navigateToDashboard} className={`flex items-center gap-3 p-3 rounded-lg text-left ${page === 'dashboard' ? 'bg-indigo-500/20 text-indigo-300' : 'hover:bg-gray-700'}`}>
-                    <Award /> Dashboard
-                </button>
-                <div className="mt-4">
-                    <h2 className="text-sm font-semibold text-gray-400 uppercase px-3 mb-2">Problems</h2>
-                    {problems.map((p, index) => (
-                        <button key={p.id ?? index} onClick={() => navigateToProblem(p)} className={`w-full text-left flex items-center gap-3 p-3 rounded-lg text-sm ${selectedProblem?.id === p.id ? 'bg-indigo-500/20 text-indigo-300' : 'hover:bg-gray-700'}`}>
-                            {progress[p.id]?.status === 'completed' ? <CheckCircle className="h-4 w-4 text-green-400" /> : <div className="h-4 w-4" />}
-                            <span className="truncate">{p.title}</span>
-                        </button>
-                    ))}
-                </div>
-            </nav>
-            <div className="absolute bottom-4 left-4 right-4 bg-gray-800 p-3 rounded-lg">
-                <p className="text-xs text-gray-400 flex items-center gap-2"><User className="h-4 w-4"/> Your User ID:</p>
-                <p className="text-xs text-white break-all">{userId}</p>
-            </div>
-        </aside>
+    const searchTerms = ingredientsInput.toLowerCase().split(',').map(term => term.trim());
+    const filtered = mockRecipes.filter(recipe =>
+      searchTerms.some(term =>
+        recipe.ingredients.some(ing => ing.toLowerCase().includes(term))
+      )
     );
+    setSuggestedRecipes(filtered);
+  };
+    
+  useEffect(handleIngredientSearch, [ingredientsInput]);
 
-    return (
-        <div className="flex h-screen bg-gray-800 text-gray-200 font-sans">
-            <div className="hidden md:flex">
-                <Sidebar width={sidebarWidth} />
-                <div 
-                    onMouseDown={handleSidebarMouseDown}
-                    className="w-2 cursor-col-resize bg-gray-700 hover:bg-indigo-500 transition-colors duration-200 flex-shrink-0"
-                    title="Drag to resize"
-                />
-            </div>
-             {/* Mobile Sidebar */}
-            <div className="md:hidden">
-                <Sidebar width={288} />
-            </div>
-            <main className="flex-1 flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between p-4 bg-gray-900/50 border-b border-gray-700 md:hidden">
-                     <h1 className="text-xl font-bold text-indigo-400 flex items-center gap-2"><BrainCircuit /> Mentor</h1>
-                    <button onClick={() => setIsMenuOpen(true)} className="text-gray-400 hover:text-white">
-                        <Menu />
-                    </button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-                    {page === 'dashboard' && <Dashboard navigateToProblem={navigateToProblem} progress={progress} problems={problems} phases={phases} />}
-                    {page === 'problem' && selectedProblem && <ProblemView problem={selectedProblem} onBack={navigateToDashboard} db={db} userId={userId} progressData={progress[selectedProblem.id]} />}
-                </div>
-            </main>
-        </div>
-    );
+  const handleSelectRecipe = (recipe) => {
+    setSelectedRecipe(recipe);
+    setPage('recipe');
+  };
+
+  const showNotification = (message) => {
+      setNotification(message);
+      setTimeout(() => setNotification(''), 3000);
+  };
+
+  const addToGroceryList = () => {
+    if (!selectedRecipe) return;
+    const newItems = selectedRecipe.ingredients.filter(ing => !groceryList.some(item => item.name.toLowerCase() === ing.toLowerCase()));
+    if (newItems.length > 0) {
+      const updatedList = [...groceryList, ...newItems.map(name => ({name, checked: false}))];
+      setGroceryList(updatedList);
+      localStorage.setItem('smart-recipe-grocery', JSON.stringify(updatedList));
+      showNotification(`${newItems.length} new item(s) added to your grocery list!`);
+    } else {
+      showNotification('All ingredients are already on your list.');
+    }
+  };
+    
+  const handleGroceryItemChange = (index, newName) => {
+      const updatedList = [...groceryList];
+      updatedList[index].name = newName;
+      setGroceryList(updatedList);
+      localStorage.setItem('smart-recipe-grocery', JSON.stringify(updatedList));
+  };
+    
+  const toggleGroceryItemChecked = (index) => {
+      const updatedList = [...groceryList];
+      updatedList[index].checked = !updatedList[index].checked;
+      setGroceryList(updatedList);
+      localStorage.setItem('smart-recipe-grocery', JSON.stringify(updatedList));
+  };
+    
+  const removeGroceryItem = (index) => {
+      const updatedList = groceryList.filter((_, i) => i !== index);
+      setGroceryList(updatedList);
+      localStorage.setItem('smart-recipe-grocery', JSON.stringify(updatedList));
+  };
+
+  const speak = (text) => {
+    speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    speechSynthesis.speak(utterance);
+  };
+
+  const startCookingAssistant = () => {
+    setIsCooking(true);
+    setCurrentStep(0);
+    const firstStep = selectedRecipe.steps[0];
+    const intro = `Let's start cooking ${selectedRecipe.title}. Step 1: ${firstStep}. Say 'Next' when you're ready.`;
+    setCookingMessage(intro);
+    speak(intro);
+    startListening();
+  };
+
+  const stopCookingAssistant = () => {
+    setIsCooking(false);
+    setIsPaused(false);
+    if(recognitionRef.current) {
+        recognitionRef.current.stop();
+    }
+    speechSynthesis.cancel();
+    setCookingMessage('');
+  };
+
+  const startListening = () => {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+          const msg = "Sorry, your browser doesn't support speech recognition.";
+          setCookingMessage(msg);
+          speak(msg);
+          return;
+      }
+      
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event) => {
+          const command = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
+          handleVoiceCommand(command);
+      };
+
+      recognition.onerror = (event) => {
+        if(event.error !== 'no-speech' && event.error !== 'audio-capture') {
+             setCookingMessage(`Speech recognition error: ${event.error}.`);
+        }
+      };
+      
+      recognition.onend = () => {
+          if (isCooking) recognition.start();
+      };
+
+      recognition.start();
+      recognitionRef.current = recognition;
+  };
+  
+  const handleVoiceCommand = (command) => {
+      if (isPaused && !command.includes('resume')) return;
+
+      if (command.includes('next')) {
+          const nextStepIndex = currentStep + 1;
+          if (nextStepIndex < selectedRecipe.steps.length) {
+              setCurrentStep(nextStepIndex);
+              const nextStepText = `Step ${nextStepIndex + 1}: ${selectedRecipe.steps[nextStepIndex]}`;
+              setCookingMessage(nextStepText);
+              speak(nextStepText);
+          } else {
+              const msg = "You've completed all the steps! Well done.";
+              setCookingMessage(msg);
+              speak(msg);
+              stopCookingAssistant();
+          }
+      } else if (command.includes('repeat')) {
+          const currentStepText = `Repeating Step ${currentStep + 1}: ${selectedRecipe.steps[currentStep]}`;
+          setCookingMessage(currentStepText);
+          speak(currentStepText);
+      } else if (command.includes('back') || command.includes('previous')) {
+           const prevStepIndex = currentStep - 1;
+           if (prevStepIndex >= 0) {
+               setCurrentStep(prevStepIndex);
+               const prevStepText = `Step ${prevStepIndex + 1}: ${selectedRecipe.steps[prevStepIndex]}`;
+               setCookingMessage(prevStepText);
+               speak(prevStepText);
+           } else {
+               const msg = "You are already on the first step.";
+               setCookingMessage(msg);
+               speak(msg);
+           }
+      } else if (command.includes('pause')) {
+          speechSynthesis.pause();
+          setIsPaused(true);
+          setCookingMessage("Paused. Say 'resume' to continue.");
+      } else if (command.includes('resume')) {
+          speechSynthesis.resume();
+          setIsPaused(false);
+          setCookingMessage(`Resuming step ${currentStep + 1}.`);
+      } else if (command.match(/go to step (\d+)/)) {
+          const stepNum = parseInt(command.match(/go to step (\d+)/)[1], 10);
+          const stepIndex = stepNum - 1;
+          if (stepIndex >= 0 && stepIndex < selectedRecipe.steps.length) {
+              setCurrentStep(stepIndex);
+              const stepText = `Okay, moving to step ${stepNum}: ${selectedRecipe.steps[stepIndex]}`;
+              setCookingMessage(stepText);
+              speak(stepText);
+          } else {
+              const msg = `Sorry, I can't find step number ${stepNum}.`;
+              setCookingMessage(msg);
+              speak(msg);
+          }
+      } else if (command.includes('stop') || command.includes('exit')) {
+          const msg = "Stopping the cooking assistant. Goodbye!";
+          setCookingMessage(msg);
+          speak(msg);
+          stopCookingAssistant();
+      }
+  };
+    
+  useEffect(() => {
+    return () => {
+        if(recognitionRef.current) recognitionRef.current.stop();
+        speechSynthesis.cancel();
+    };
+  }, []);
+    
+  useEffect(() => {
+      if (!isCooking && recognitionRef.current) {
+          recognitionRef.current.stop();
+          recognitionRef.current = null;
+      }
+  }, [isCooking]);
+
+
+  const renderPage = () => {
+    // ... (render logic as before)
+     switch (page) {
+      case 'login': return <LoginPage onLogin={handleLogin} />;
+      case 'home': return <HomePage ingredientsInput={ingredientsInput} setIngredientsInput={setIngredientsInput} recipes={suggestedRecipes} onSelectRecipe={handleSelectRecipe} />;
+      case 'recipe': return <RecipeDetailPage recipe={selectedRecipe} onBack={() => setPage('home')} onAddToGrocery={addToGroceryList} isCooking={isCooking} startCooking={startCookingAssistant} stopCooking={stopCookingAssistant} currentStep={currentStep} cookingMessage={cookingMessage} isPaused={isPaused} />;
+      case 'grocery': return <GroceryListPage list={groceryList} onItemChange={handleGroceryItemChange} onToggleChecked={toggleGroceryItemChecked} onRemoveItem={removeGroceryItem} onBack={() => setPage('home')} />;
+      default: return <LoginPage onLogin={handleLogin} />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
+      <AnimatePresence>
+        {notification && <Notification message={notification} />}
+      </AnimatePresence>
+      <div className="container mx-auto p-4 md:p-8 max-w-6xl">
+        {isAuthenticated && <Navbar onNavigate={setPage} onLogout={handleLogout} />}
+        <AnimatePresence mode="wait">
+            <motion.div key={page} initial={{ opacity: 0, x: -50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 50 }} transition={{ duration: 0.3 }}>
+                {renderPage()}
+            </motion.div>
+        </AnimatePresence>
+      </div>
+    </div>
+  );
 }
 
-// --- Dashboard Component ---
-function Dashboard({ navigateToProblem, progress, problems, phases }) {
+// --- Page Components ---
+
+const Navbar = ({ onNavigate, onLogout }) => (
+    <header className="flex justify-between items-center mb-8 p-4 bg-gray-800 rounded-xl shadow-lg">
+        <h1 className="text-2xl md:text-3xl font-bold text-orange-500 cursor-pointer flex items-center gap-2" onClick={() => onNavigate('home')}>
+           <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+           AI Sous-Chef
+        </h1>
+        <nav className="hidden md:flex items-center space-x-6">
+            <a href="#" className="text-lg font-medium text-gray-300 hover:text-orange-500 transition-colors" onClick={() => onNavigate('home')}>Home</a>
+            <a href="#" className="text-lg font-medium text-gray-300 hover:text-orange-500 transition-colors" onClick={() => onNavigate('grocery')}>Grocery List</a>
+            <Button onClick={onLogout} className="bg-red-600 hover:bg-red-700 text-white !px-4 !py-2">Logout</Button>
+        </nav>
+    </header>
+);
+
+const LoginPage = ({ onLogin }) => (
+  <div className="flex flex-col items-center justify-center min-h-screen">
+      <Card className="w-full max-w-md p-8 text-center">
+        <h1 className="text-4xl font-bold text-orange-500 mb-2">Welcome to AI Sous-Chef</h1>
+        <p className="text-gray-400 mb-8">Your smart, hands-free cooking assistant.</p>
+        <form onSubmit={onLogin} className="space-y-6">
+            <Input type="email" placeholder="Email (e.g., user@example.com)" defaultValue="user@example.com" required />
+            <Input type="password" placeholder="Password" defaultValue="password" required />
+            <Button type="submit" className="w-full bg-orange-500 hover:bg-orange-600 text-white text-lg">
+                Login
+            </Button>
+        </form>
+        <p className="text-sm text-gray-500 mt-6">This is a mocked login for the hackathon demo.</p>
+    </Card>
+  </div>
+);
+
+const HomePage = ({ ingredientsInput, setIngredientsInput, recipes, onSelectRecipe }) => (
+    <div>
+        <Card className="p-8 mb-8 bg-gray-800/50 backdrop-blur-sm">
+            <h2 className="text-3xl font-bold mb-4 text-gray-100">What's in your pantry?</h2>
+            <p className="text-gray-400 mb-6">Enter ingredients you have (comma-separated) to find delicious recipes.</p>
+            <Input type="text" placeholder="e.g., tomato, onion, pasta" value={ingredientsInput} onChange={(e) => setIngredientsInput(e.target.value)} />
+        </Card>
+        
+        <div>
+            <h3 className="text-2xl font-bold mb-6 text-gray-200">Suggested Recipes</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+                {recipes.length > 0 ? recipes.map(recipe => (
+                    <motion.div key={recipe.id} whileHover={{y: -5, scale: 1.03}} className="cursor-pointer" onClick={() => onSelectRecipe(recipe)}>
+                        <Card className="h-full flex flex-col group">
+                           <div className="overflow-hidden"><img className="h-48 w-full object-cover group-hover:scale-110 transition-transform duration-300" src={recipe.image} alt={recipe.title} /></div>
+                            <div className="p-6 flex-grow flex flex-col">
+                                <h4 className="font-bold text-xl mb-2 text-gray-100">{recipe.title}</h4>
+                                <p className="text-gray-400 text-base mb-4 flex-grow">A delicious meal ready in {recipe.time} minutes.</p>
+                                <div>{recipe.ingredients.slice(0, 3).map(ing => <Tag key={ing} text={ing} />)}</div>
+                            </div>
+                        </Card>
+                    </motion.div>
+                )) : (
+                     <div className="col-span-full text-center py-12">
+                        <p className="text-xl text-gray-500">No recipes found. Try different ingredients!</p>
+                    </div>
+                )}
+            </div>
+        </div>
+    </div>
+);
+
+const RecipeDetailPage = ({ recipe, onBack, onAddToGrocery, isCooking, startCooking, stopCooking, currentStep, cookingMessage, isPaused }) => {
+    if (!recipe) return <p>Recipe not found.</p>;
+
     return (
         <div>
-            <h1 className="text-4xl font-bold text-white mb-2">Welcome Back</h1>
-            <p className="text-lg text-gray-400 mb-10">Let's rebuild your logical thinking, one step at a time. Your journey starts now.</p>
-            
-            {phases.map((phase, index) => (
-                <div key={phase.id ?? index} className="mb-8">
-                    <h2 className="text-2xl font-semibold text-indigo-400 mb-2">{phase.name}</h2>
-                    <p className="text-gray-400 mb-4">{phase.description}</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {problems.filter(p => p.phase === phase.id).map((p, idx) => (
-                            <ProblemCard key={p.id ?? idx} problem={p} onSelect={navigateToProblem} status={progress[p.id]?.status} />
-                        ))}
+            <Button onClick={onBack} className="mb-8 bg-gray-700 hover:bg-gray-600 text-gray-200"> &larr; Back to Recipes </Button>
+            <Card className="overflow-visible">
+                <div className="md:flex">
+                    <div className="md:flex-shrink-0"><img className="h-64 w-full object-cover md:w-64" src={recipe.image} alt={recipe.title} /></div>
+                    <div className="p-8 flex-grow">
+                        <h2 className="text-4xl font-bold text-gray-100 mb-4">{recipe.title}</h2>
+                        <div className="flex items-center text-gray-400 mb-6">
+                            <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span>{recipe.time} minutes</span>
+                        </div>
+                        <div className="flex space-x-4">
+                            <Button onClick={onAddToGrocery} className="bg-emerald-600 hover:bg-emerald-700 text-white">Add to Grocery List</Button>
+                             <Button onClick={isCooking ? stopCooking : startCooking} className={`${isCooking ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600'} text-white flex items-center space-x-2`}>
+                                {isCooking ? 'Stop Cooking' : 'Start Cooking (Hands-Free)'}
+                            </Button>
+                        </div>
                     </div>
                 </div>
-            ))}
-        </div>
-    );
-}
 
-function ProblemCard({ problem, onSelect, status }) {
-    const isCompleted = status === 'completed';
-    return (
-        <div onClick={() => onSelect(problem)} className="bg-gray-900/50 p-6 rounded-lg border border-gray-700 hover:border-indigo-500 cursor-pointer transition-all duration-300">
-            <div className="flex justify-between items-start">
-                <h3 className="text-xl font-semibold text-white mb-2">{problem.title}</h3>
-                {isCompleted && <CheckCircle className="text-green-400" />}
-            </div>
-            <p className={`text-sm font-medium ${problem.difficulty === 'Easy' ? 'text-green-400' : 'text-yellow-400'}`}>{problem.difficulty}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-                {problem.companies.map(c => <span key={c} className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded-full">{c}</span>)}
-            </div>
-        </div>
-    );
-}
+                {isCooking && (
+                    <motion.div initial={{opacity: 0, height: 0}} animate={{opacity: 1, height: 'auto'}} className="p-8 bg-gray-900/50 border-t-2 border-gray-700">
+                        <h3 className="text-2xl font-bold text-orange-400 mb-4">AI Cooking Assistant</h3>
+                        <div className="text-lg text-orange-200 p-4 bg-orange-500/10 rounded-lg">
+                            <p><strong>{isPaused ? 'Paused...' : 'Listening...'}</strong> {cookingMessage}</p>
+                            <p className="text-sm mt-2 text-orange-400">Say: "Next", "Repeat", "Back", "Pause", "Resume", "Go to step [number]", or "Stop".</p>
+                        </div>
+                    </motion.div>
+                )}
 
-// --- Resizable Panel Component ---
-const ResizablePanels = ({ leftPanel, rightPanel }) => {
-    const [leftWidth, setLeftWidth] = useState(50); // Initial width in percentage
-    const isResizing = useRef(false);
-    const containerRef = useRef(null);
-
-    const handleMouseDown = (e) => {
-        e.preventDefault();
-        isResizing.current = true;
-        document.body.style.cursor = 'col-resize';
-    };
-
-    const handleMouseUp = useCallback(() => {
-        isResizing.current = false;
-        document.body.style.cursor = 'default';
-    }, []);
-
-    const handleMouseMove = useCallback((e) => {
-        if (!isResizing.current || !containerRef.current) return;
-        const containerRect = containerRef.current.getBoundingClientRect();
-        const newLeftWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
-        if (newLeftWidth > 20 && newLeftWidth < 80) { // Min/Max width constraints
-            setLeftWidth(newLeftWidth);
-        }
-    }, []);
-
-    useEffect(() => {
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
-
-        return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
-        };
-    }, [handleMouseMove, handleMouseUp]);
-
-    return (
-        <div ref={containerRef} className="flex h-full w-full">
-            <div style={{ width: `${leftWidth}%` }} className="min-w-[20%] max-w-[80%]">
-                {leftPanel}
-            </div>
-            <div 
-                onMouseDown={handleMouseDown}
-                className="w-2 cursor-col-resize bg-gray-700 hover:bg-indigo-500 transition-colors duration-200"
-                title="Drag to resize"
-            />
-            <div className="flex-1">
-                {rightPanel}
-            </div>
+                <div className="p-8">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        <div className="md:col-span-1">
+                            <h3 className="text-2xl font-bold mb-4 border-b-2 border-gray-700 pb-2 text-gray-200">Ingredients</h3>
+                            <ul className="space-y-3">
+                                {recipe.ingredients.map((ing, i) => (
+                                    <li key={i} className="flex items-center">
+                                       <input id={`ing-${i}`} type="checkbox" className="h-5 w-5 rounded border-gray-600 bg-gray-700 text-emerald-600 focus:ring-emerald-500" />
+                                       <label htmlFor={`ing-${i}`} className="ml-3 text-lg text-gray-300 capitalize">{ing}</label>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                        <div className="md:col-span-2">
+                             <h3 className="text-2xl font-bold mb-4 border-b-2 border-gray-700 pb-2 text-gray-200">Instructions</h3>
+                             <div className="space-y-6">
+                                {recipe.steps.map((step, i) => (
+                                   <AnimatePresence key={i}>
+                                     <motion.div className={`p-6 rounded-lg transition-all duration-300 ${isCooking && currentStep === i ? 'bg-orange-500/10 ring-4 ring-orange-500/50 shadow-xl' : 'bg-gray-700/50'}`} animate={{ scale: isCooking && currentStep === i ? 1.03 : 1 }} layout>
+                                         <div className="flex items-start">
+                                             <div className="flex-shrink-0 flex items-center justify-center h-10 w-10 rounded-full bg-orange-500 text-white font-bold text-lg">{i + 1}</div>
+                                             <p className="ml-4 text-lg text-gray-300">{step}</p>
+                                         </div>
+                                     </motion.div>
+                                   </AnimatePresence>
+                                ))}
+                             </div>
+                        </div>
+                    </div>
+                </div>
+            </Card>
         </div>
     );
 };
 
-
-// --- Problem View Component ---
-function ProblemView({ problem, onBack, db, userId, progressData }) {
-    const [activeTab, setActiveTab] = useState('understand');
-    const [notes, setNotes] = useState({ understand: '', plan: '', execute: problem.starterCode, review: '' });
-    const [chatMessages, setChatMessages] = useState([]);
-    const [chatInput, setChatInput] = useState('');
-    const [isThinking, setIsThinking] = useState(false);
-    const isCompleted = progressData?.status === 'completed';
-    const chatEndRef = useRef(null);
-
-    useEffect(() => {
-        setNotes({
-            understand: progressData?.understand || '',
-            plan: progressData?.plan || '',
-            execute: progressData?.execute || problem.starterCode,
-            review: progressData?.review || '',
-        });
-        setChatMessages([]);
-    }, [problem, progressData]);
-
-    useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [chatMessages]);
-
-    const handleNoteChange = (tab, value) => {
-        if (isCompleted) return;
-        const newNotes = { ...notes, [tab]: value };
-        setNotes(newNotes);
-        const handler = setTimeout(() => saveProgress(newNotes), 1500);
-        return () => clearTimeout(handler);
-    };
-
-    const saveProgress = async (currentNotes, statusOverride = null) => {
-        if (!db || !userId) return;
-        const docRef = doc(db, `artifacts/${appId}/users/${userId}/progress`, problem.id);
-        const dataToSave = {
-            id: problem.id,
-            status: statusOverride || progressData?.status || 'in-progress',
-            ...currentNotes,
-            lastUpdated: new Date().toISOString(),
-        };
-        try {
-            await setDoc(docRef, dataToSave, { merge: true });
-        } catch (error) {
-            console.error("Failed to save progress:", error);
-        }
-    };
-    
-    const handleCompletion = async () => {
-        if (notes.execute.trim() === problem.starterCode.trim()) {
-             setChatMessages(prev => [...prev, { sender: 'bot', text: "It looks like you haven't written any code yet. Please try solving the problem in the 'Execute' tab before asking for a review." }]);
-            return;
-        }
-
-        setIsThinking(true);
-        const feedback = await reviewCode(notes.execute);
-        setChatMessages(prev => [...prev, { sender: 'bot', text: feedback }]);
-        setIsThinking(false);
-        saveProgress(notes, 'completed');
-    };
-
-    const reattemptProblem = () => {
-        const clearedNotes = { understand: '', plan: '', execute: problem.starterCode, review: '' };
-        setNotes(clearedNotes);
-        saveProgress(clearedNotes, 'in-progress');
-    };
-
-    const handleSendMessage = async () => {
-        if (!chatInput.trim() || isThinking) return;
-
-        const newMessages = [...chatMessages, { sender: 'user', text: chatInput }];
-        setChatMessages(newMessages);
-        setChatInput('');
-        setIsThinking(true);
-
-        const prompt = `You are a Socratic coding mentor. The user is working on a problem.
-        Problem Description: "${problem.description}"
-        Their current code is: \`\`\`java\n${notes.execute}\n\`\`\`
-        The user's question is: "${chatInput}"
-        
-        Your task is to guide them without giving the direct answer. Ask leading questions, suggest concepts to research, or point out potential logical flaws in their current code. Keep your response concise and encouraging.`;
-
-        const response = await callGemini(prompt);
-        setChatMessages(prev => [...prev, { sender: 'bot', text: response }]);
-        setIsThinking(false);
-    };
-
-    const reviewCode = async (code) => {
-        const prompt = `You are an expert Java code reviewer. The user is solving: "${problem.description}". Here is their code:\n\n\`\`\`java\n${code}\n\`\`\`\n\nReview their code for logical errors, missed edge cases, and adherence to requirements. Provide constructive feedback in a mentor-like tone using Markdown. If the code looks good, praise them and suggest one minor improvement or thing to consider. Start with "Here's my review of your solution:".`;
-        return await callGemini(prompt);
-    };
-
-    const callGemini = async (prompt) => {
-        if (!geminiApiKey) {
-            return "Error: VITE_GEMINI_API_KEY is not configured.";
-        }
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`;
-        const payload = { contents: [{ parts: [{ text: prompt }] }] };
-
-        try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!response.ok) throw new Error(`API call failed: ${response.status}`);
-            const result = await response.json();
-            return result.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't generate a response.";
-        } catch (error) {
-            console.error(error);
-            return `An error occurred: ${error.message}. Please try again.`;
-        }
-    };
-
-    const tabs = [
-        { id: 'understand', label: '1. Understand' },
-        { id: 'plan', label: '2. Plan' },
-        { id: 'execute', label: '3. Execute' },
-        { id: 'review', label: '4. Review' },
-    ];
-
-    const leftPanelContent = (
-        <div className="bg-gray-900/50 p-6 rounded-lg border border-gray-700 overflow-y-auto flex flex-col h-full">
-            <div className="flex-grow">
-                <button onClick={onBack} className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 mb-4">
-                    <ArrowLeft size={18} /> Back to Dashboard
-                </button>
-                <h2 className="text-3xl font-bold text-white mb-2">{problem.title}</h2>
-                <p className="text-gray-400 mb-6">{problem.description}</p>
-                
-                <h3 className="text-lg font-semibold text-indigo-400 flex items-center gap-2 mb-2"><Terminal /> Test Cases</h3>
-                <div className="space-y-3">
-                    {problem.testCases?.map((tc, index) => (
-                        <div key={index} className="bg-gray-800 p-3 rounded-md text-sm">
-                            <p className="font-mono text-gray-400">Input: <span className="text-cyan-300">{tc.input}</span></p>
-                            <p className="font-mono text-gray-400">Expected Output: <span className="text-green-300">{tc.expectedOutput}</span></p>
-                        </div>
+const GroceryListPage = ({ list, onItemChange, onToggleChecked, onRemoveItem, onBack }) => (
+    <div>
+        <Button onClick={onBack} className="mb-8 bg-gray-700 hover:bg-gray-600 text-gray-200">&larr; Back Home</Button>
+        <Card className="p-8">
+            <h2 className="text-3xl font-bold mb-6 text-gray-100">Your Grocery List</h2>
+            {list.length > 0 ? (
+                <ul className="space-y-4">
+                    {list.map((item, index) => (
+                        <motion.li key={index} layout initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -50 }} className="flex items-center p-4 bg-gray-700/50 rounded-lg">
+                            <input type="checkbox" checked={item.checked} onChange={() => onToggleChecked(index)} className="h-6 w-6 rounded border-gray-600 bg-gray-700 text-emerald-600 focus:ring-emerald-500" />
+                            <input type="text" value={item.name} onChange={(e) => onItemChange(index, e.target.value)} className={`flex-grow mx-4 px-2 py-1 bg-transparent text-lg focus:outline-none focus:bg-gray-800 rounded ${item.checked ? 'line-through text-gray-500' : 'text-gray-200'}`} />
+                            <button onClick={() => onRemoveItem(index)} className="text-red-500 hover:text-red-400 transition-colors">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </motion.li>
                     ))}
-                </div>
-            </div>
-            <div className="bg-gray-800 p-4 rounded-lg mt-6 flex-shrink-0">
-                <h3 className="font-semibold text-indigo-400 flex items-center gap-2 mb-2"><Bot /> Mentor Chat</h3>
-                <div className="h-48 overflow-y-auto bg-gray-900/50 p-2 rounded-md space-y-3">
-                    {chatMessages.map((msg, index) => (
-                        <div key={index} className={`flex items-start gap-2 ${msg.sender === 'user' ? 'justify-end' : ''}`}>
-                            {msg.sender === 'bot' && <Bot className="h-5 w-5 text-indigo-400 flex-shrink-0 mt-1" />}
-                            <div className={`p-3 rounded-lg max-w-xs lg:max-w-md ${msg.sender === 'user' ? 'bg-indigo-500 text-white' : 'bg-gray-700'}`}>
-                                <div className="prose prose-invert prose-sm max-w-none" dangerouslySetInnerHTML={{__html: msg.text.replace(/\n/g, '<br />')}}></div>
-                            </div>
-                            {msg.sender === 'user' && <User className="h-5 w-5 text-gray-400 flex-shrink-0 mt-1" />}
-                        </div>
-                    ))}
-                    {isThinking && (
-                         <div className="flex items-start gap-2">
-                             <Bot className="h-5 w-5 text-indigo-400 flex-shrink-0 mt-1" />
-                             <div className="p-3 rounded-lg bg-gray-700">
-                                <Loader2 className="animate-spin h-5 w-5" />
-                             </div>
-                         </div>
-                    )}
-                    <div ref={chatEndRef} />
-                </div>
-                <div className="mt-2 flex gap-2">
-                    <input 
-                        type="text"
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                        placeholder="Ask a question..."
-                        className="flex-1 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        disabled={isThinking}
-                    />
-                    <button onClick={handleSendMessage} disabled={isThinking} className="btn-secondary px-3"><Send size={16} /></button>
-                </div>
-            </div>
-        </div>
-    );
-
-    const rightPanelContent = (
-        <div className="flex flex-col bg-gray-900/50 rounded-lg border border-gray-700 h-full">
-            <div className="flex border-b border-gray-700">
-                {tabs.map(tab => (
-                    <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                        className={`flex-1 p-4 text-sm font-medium transition-colors ${activeTab === tab.id ? 'bg-indigo-500/20 text-indigo-300 border-b-2 border-indigo-400' : 'text-gray-400 hover:bg-gray-800'}`}>
-                        {tab.label}
-                    </button>
-                ))}
-            </div>
-            <div className="flex-1 p-4 overflow-y-auto">
-                {activeTab === 'understand' && <Editor value={notes.understand} onChange={(e) => handleNoteChange('understand', e.target.value)} placeholder="What are the inputs? Outputs? Edge cases? Write them here." disabled={isCompleted} />}
-                {activeTab === 'plan' && <Editor value={notes.plan} onChange={(e) => handleNoteChange('plan', e.target.value)} placeholder="Write your step-by-step plan in plain English or pseudocode." disabled={isCompleted} />}
-                {activeTab === 'execute' && <CodeEditor value={notes.execute} onChange={(e) => handleNoteChange('execute', e.target.value)} disabled={isCompleted} />}
-                {activeTab === 'review' && <Editor value={notes.review} onChange={(e) => handleNoteChange('review', e.target.value)} placeholder="How did you test your code? What inputs did you use? Did you find any bugs?" disabled={isCompleted} />}
-            </div>
-            <div className="p-4 border-t border-gray-700 flex flex-wrap gap-2 justify-end">
-                {isCompleted ? (
-                    <button onClick={reattemptProblem} className="btn-secondary"><RefreshCw size={16} /> Re-attempt</button>
-                ) : (
-                    <button onClick={handleCompletion} disabled={isThinking} className="btn-primary"><CheckCircle size={16} /> Review & Complete</button>
-                )}
-            </div>
-        </div>
-    );
-
-    // This check handles mobile view where panels are stacked
-    const isMobileView = () => window.innerWidth < 768;
-    const [mobileView, setMobileView] = useState(isMobileView());
-
-    useEffect(() => {
-        const checkResize = () => setMobileView(isMobileView());
-        window.addEventListener('resize', checkResize);
-        return () => window.removeEventListener('resize', checkResize);
-    }, []);
-
-    if (mobileView) {
-        return (
-            <div className="flex flex-col gap-6 h-full p-4">
-                {leftPanelContent}
-                {rightPanelContent}
-            </div>
-        );
-    }
-
-    return <ResizablePanels leftPanel={leftPanelContent} rightPanel={rightPanelContent} />;
-}
-
-const Editor = ({ value, onChange, placeholder, disabled }) => (
-    <textarea
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        disabled={disabled}
-        className="w-full h-full bg-transparent text-gray-300 p-2 rounded-md focus:outline-none resize-none disabled:text-gray-500"
-        style={{ minHeight: '300px' }}
-    />
+                </ul>
+            ) : (
+                <p className="text-lg text-gray-500">Your grocery list is empty. Add ingredients from a recipe!</p>
+            )}
+        </Card>
+    </div>
 );
 
-const CodeEditor = ({ value, onChange, disabled }) => (
-    <textarea
-        value={value}
-        onChange={onChange}
-        disabled={disabled}
-        className="w-full h-full bg-gray-900 text-cyan-300 font-mono p-4 rounded-md focus:outline-none resize-none disabled:bg-gray-800 disabled:text-gray-500"
-        style={{ minHeight: '300px' }}
-        spellCheck="false"
-    />
-);
-
-// --- CSS for buttons ---
-const style = document.createElement('style');
-style.textContent = `
-    .btn-primary {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        background-color: #6366f1; /* indigo-500 */
-        color: white;
-        padding: 0.5rem 1rem;
-        border-radius: 0.5rem;
-        font-weight: 600;
-        transition: background-color 0.2s;
-    }
-    .btn-primary:hover {
-        background-color: #4f46e5; /* indigo-600 */
-    }  
-    .btn-primary:disabled {
-        background-color: #4338ca; /* indigo-800 */
-        cursor: not-allowed;
-    }
-    .btn-secondary {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        background-color: #374151; /* gray-700 */
-        color: #d1d5db; /* gray-300 */
-        padding: 0.5rem 1rem;
-        border-radius: 0.5rem;
-        font-weight: 600;
-        border: 1px solid #4b5563; /* gray-600 */
-        transition: background-color 0.2s;
-    }
-    .btn-secondary:hover {
-        background-color: #4b5563; /* gray-600 */
-    }
-    .btn-secondary:disabled {
-        background-color: #1f2937; /* gray-800 */
-        color: #6b7280; /* gray-500 */
-        cursor: not-allowed;
-    }
-    .prose-invert a { color: #818cf8; }
-    .prose-invert code { color: #93c5fd; background-color: rgba(0,0,0,0.2); padding: 2px 4px; border-radius: 4px; }
-`;
-document.head.appendChild(style);
