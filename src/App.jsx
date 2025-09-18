@@ -1,99 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { initializeApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithCustomToken, signInAnonymously, onAuthStateChanged, signOut } from 'firebase/auth';
+import { getFirestore, doc, onSnapshot, setDoc, updateDoc, collection, query, getDocs } from 'firebase/firestore';
 
-// --- MOCK DATA ---
-const mockRecipes = [
-  {
-    id: 1,
-    title: 'Classic Spaghetti Bolognese',
-    image: 'https://images.unsplash.com/photo-1621996346565-e326e20f4423?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80',
-    time: 45,
-    ingredients: ['pasta', 'onion', 'tomato', 'ground beef', 'garlic'],
-    steps: [
-      "Heat olive oil in a large skillet over medium-high heat. Add onion and garlic; cook and stir until softened, about 5 minutes.",
-      "Add ground beef and cook until browned and crumbly, 5 to 7 minutes. Drain excess grease.",
-      "Stir in crushed tomatoes, tomato paste, water, sugar, basil, oregano, salt, and pepper. Bring to a simmer, then reduce heat to low, cover, and let simmer for at least 1 hour, stirring occasionally.",
-      "Meanwhile, bring a large pot of lightly salted water to a boil. Cook spaghetti in the boiling water, stirring occasionally, until tender yet firm to the bite, about 12 minutes. Drain.",
-      "Serve sauce over hot spaghetti."
-    ],
-  },
-  {
-    id: 2,
-    title: 'Tomato and Onion Bruschetta',
-    image: 'https://images.unsplash.com/photo-1579992869397-531b2b3b7a8a?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1287&q=80',
-    time: 20,
-    ingredients: ['tomato', 'onion', 'bread', 'garlic', 'basil'],
-    steps: [
-        "Preheat your oven's broiler.",
-        "Combine diced tomatoes, chopped onion, minced garlic, and fresh basil in a medium bowl.",
-        "Drizzle with olive oil and season with salt and pepper to taste. Let it sit for about 10 minutes for the flavors to meld.",
-        "Slice the bread into 1/2-inch thick slices. Arrange on a baking sheet.",
-        "Broil for 1 to 2 minutes per side, or until lightly golden.",
-        "Rub one side of each toast slice with the cut side of a garlic clove.",
-        "Top the toasted bread with the tomato mixture and serve immediately."
-    ],
-  },
-  {
-    id: 3,
-    title: 'Simple Chicken Curry',
-    image: 'https://images.unsplash.com/photo-1565557623262-b9a35c218694?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1374&q=80',
-    time: 35,
-    ingredients: ['chicken', 'onion', 'tomato', 'ginger', 'garlic', 'curry powder'],
-    steps: [
-        "Heat oil in a large pot or Dutch oven over medium heat.",
-        "Add chopped onion and cook until soft and translucent.",
-        "Stir in minced garlic and grated ginger, and cook for another minute until fragrant.",
-        "Add chicken pieces and sear on all sides.",
-        "Sprinkle in curry powder, turmeric, and cumin. Stir to coat the chicken.",
-        "Pour in chopped tomatoes and coconut milk. Season with salt.",
-        "Bring to a simmer, then reduce heat, cover, and cook for 20-25 minutes, or until chicken is cooked through. Garnish with cilantro before serving."
-    ],
-  },
-  {
-    id: 4,
-    title: 'Hearty Lentil Soup',
-    image: 'https://images.unsplash.com/photo-1595460592124-34539c367dc4?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1287&q=80',
-    time: 50,
-    ingredients: ['lentils', 'onion', 'carrot', 'celery', 'tomato', 'garlic'],
-    steps: [
-        "Heat olive oil in a large pot or Dutch oven over medium heat.",
-        "Add chopped onion, carrots, and celery. Cook until softened, about 5-7 minutes.",
-        "Add minced garlic and cook for another minute until fragrant.",
-        "Stir in rinsed lentils, diced tomatoes, vegetable broth, and dried thyme.",
-        "Bring to a boil, then reduce heat and simmer for 30-40 minutes, or until lentils are tender.",
-        "Season with salt and pepper to taste. For a creamier soup, you can use an immersion blender for a few seconds.",
-        "Serve hot, garnished with fresh parsley."
-    ],
-  },
-  {
-    id: 5,
-    title: 'Avocado Toast with Egg',
-    image: 'https://images.unsplash.com/photo-1482049016688-2d3e1b311543?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1310&q=80',
-    time: 10,
-    ingredients: ['bread', 'avocado', 'egg', 'chili flakes'],
-    steps: [
-        "Toast bread slices to your desired level of crispness.",
-        "While the bread is toasting, mash the avocado in a small bowl. Season with salt and pepper.",
-        "Cook an egg to your liking (fried, poached, or scrambled).",
-        "Spread the mashed avocado evenly on the toast.",
-        "Top with the cooked egg and sprinkle with chili flakes. Serve immediately."
-    ],
-  },
-  {
-    id: 6,
-    title: 'Healthy Banana Pancakes',
-    image: 'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1380&q=80',
-    time: 15,
-    ingredients: ['banana', 'egg', 'oats', 'cinnamon'],
-    steps: [
-      "In a blender, combine one ripe banana, two eggs, and 1/2 cup of rolled oats. Add a pinch of cinnamon.",
-      "Blend until the mixture is smooth.",
-      "Heat a non-stick skillet over medium heat and lightly grease with oil or butter.",
-      "Pour small circles of batter onto the skillet and cook for 2-3 minutes per side, or until golden brown.",
-      "Serve with your favorite toppings like maple syrup, fresh berries, or yogurt."
-    ],
-  }
-];
+
+// --- Firebase Initialization ---
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
 
 // --- Helper Functions ---
 const convertToBase64 = (file) => new Promise((resolve, reject) => {
@@ -195,6 +115,7 @@ const Notification = ({ message }) => (
 // --- Main App ---
 export default function App() {
   const [page, setPage] = useState('login');
+  const [allRecipes, setAllRecipes] = useState([]);
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [ingredientsInput, setIngredientsInput] = useState('');
   const [suggestedRecipes, setSuggestedRecipes] = useState([]);
@@ -204,6 +125,9 @@ export default function App() {
   const [bookmarkedRecipes, setBookmarkedRecipes] = useState([]);
   const [planner, setPlanner] = useState({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [userId, setUserId] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
 
   // WOW Factor State
   const [isCooking, setIsCooking] = useState(false);
@@ -213,43 +137,120 @@ export default function App() {
   
   const recognitionRef = useRef(null);
 
+  const showNotification = (message, isError = false) => {
+      // Simple implementation for now
+      setNotification(message);
+      setTimeout(() => setNotification(''), 3000);
+  };
+
   useEffect(() => {
-    const loggedIn = localStorage.getItem('smart-recipe-auth') === 'true';
-    if (loggedIn) {
-      setIsAuthenticated(true);
-      setPage('home');
-    }
-    const savedList = JSON.parse(localStorage.getItem('smart-recipe-grocery')) || [];
-    setGroceryList(savedList);
-    const savedBookmarks = JSON.parse(localStorage.getItem('smart-recipe-bookmarks')) || [];
-    setBookmarkedRecipes(savedBookmarks);
-    const savedPlanner = JSON.parse(localStorage.getItem('smart-recipe-planner')) || {};
-    setPlanner(savedPlanner);
+    setIsLoading(true);
+    const authAndSignIn = async () => {
+        try {
+            if (initialAuthToken) {
+                await signInWithCustomToken(auth, initialAuthToken);
+            } else {
+                 // No token, wait for user to login via form
+            }
+        } catch (error) {
+            console.error("Firebase Authentication Error:", error);
+            showNotification("Authentication failed. Please try again.", true);
+        }
+    };
+
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            setUserId(user.uid);
+            setIsAuthenticated(true);
+            setPage('home');
+        } else {
+            setUserId(null);
+            setIsAuthenticated(false);
+            setPage('login');
+            setIsLoading(false);
+        }
+    });
+
+    authAndSignIn();
   }, []);
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    localStorage.setItem('smart-recipe-auth', 'true');
-    setIsAuthenticated(true);
-    setPage('home');
+  // Firestore Data Listeners
+  useEffect(() => {
+      if (!userId) {
+          setIsLoading(false);
+          return;
+      };
+
+      const fetchAllData = async () => {
+          setIsLoading(true);
+          // 1. Fetch Recipes (Public)
+          const recipesCollectionRef = collection(db, `artifacts/${appId}/public/data/recipes`);
+          const recipesQuery = query(recipesCollectionRef);
+          try {
+              const recipesSnapshot = await getDocs(recipesQuery);
+              const fetchedRecipes = recipesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+              setAllRecipes(fetchedRecipes);
+              setSuggestedRecipes(fetchedRecipes);
+          } catch (error) {
+              console.error("Error fetching recipes:", error);
+              showNotification("Could not load recipes.", true);
+          }
+
+          // 2. Listen to User Data (Private)
+          const dataDocRef = doc(db, `artifacts/${appId}/users/${userId}/data`, 'userData');
+          const unsubscribe = onSnapshot(dataDocRef, (docSnap) => {
+              if (docSnap.exists()) {
+                  const data = docSnap.data();
+                  setGroceryList(data.groceryList || []);
+                  setBookmarkedRecipes(data.bookmarkedRecipes || []);
+                  setPlanner(data.planner || {});
+              } else {
+                  setDoc(dataDocRef, { groceryList: [], bookmarkedRecipes: [], planner: {} });
+              }
+              setIsLoading(false);
+          }, (error) => {
+              console.error("Error with user data listener:", error);
+              showNotification("Could not sync your data.", true);
+              setIsLoading(false);
+          });
+          
+          return () => unsubscribe();
+      }
+      
+      fetchAllData();
+  }, [userId]);
+
+
+  const handleAuthAction = async (isLogin, email, password) => {
+      try {
+          if (isLogin) {
+              await signInWithEmailAndPassword(auth, email, password);
+              showNotification("Login successful!");
+          } else {
+              await createUserWithEmailAndPassword(auth, email, password);
+              showNotification("Account created successfully!");
+          }
+      } catch (error) {
+          console.error(`Firebase ${isLogin ? 'Login' : 'Sign Up'} Error:`, error);
+          showNotification(error.message, true);
+      }
   };
 
   const handleLogout = () => {
-    localStorage.clear();
-    setIsAuthenticated(false);
-    setPage('login');
+    signOut(auth);
     setGroceryList([]);
     setBookmarkedRecipes([]);
     setPlanner({});
+    setAllRecipes([]);
   };
 
   const handleIngredientSearch = () => {
     if (!ingredientsInput.trim()) {
-        setSuggestedRecipes(mockRecipes);
+        setSuggestedRecipes(allRecipes);
         return;
     }
     const searchTerms = ingredientsInput.toLowerCase().split(',').map(term => term.trim());
-    const filtered = mockRecipes.filter(recipe =>
+    const filtered = allRecipes.filter(recipe =>
       searchTerms.some(term =>
         recipe.ingredients.some(ing => ing.toLowerCase().includes(term))
       )
@@ -257,19 +258,24 @@ export default function App() {
     setSuggestedRecipes(filtered);
   };
     
-  useEffect(handleIngredientSearch, [ingredientsInput]);
+  useEffect(handleIngredientSearch, [ingredientsInput, allRecipes]);
 
   const handleSelectRecipe = (recipe) => {
     setSelectedRecipe(recipe);
     setPage('recipe');
   };
 
-  const showNotification = (message) => {
-      setNotification(message);
-      setTimeout(() => setNotification(''), 3000);
+  const updateFirestoreData = async (data) => {
+      if (!userId) return;
+      const dataDocRef = doc(db, `artifacts/${appId}/users/${userId}/data`, 'userData');
+      try {
+          await setDoc(dataDocRef, data, { merge: true });
+      } catch (e) {
+         console.error("Error updating document: ", e);
+      }
   };
 
-  const toggleBookmark = (recipe) => {
+  const toggleBookmark = async (recipe) => {
     const isBookmarked = bookmarkedRecipes.some(r => r.id === recipe.id);
     let updatedBookmarks;
     if (isBookmarked) {
@@ -279,28 +285,25 @@ export default function App() {
         updatedBookmarks = [...bookmarkedRecipes, recipe];
         showNotification(`${recipe.title} added to your recipe book!`);
     }
-    setBookmarkedRecipes(updatedBookmarks);
-    localStorage.setItem('smart-recipe-bookmarks', JSON.stringify(updatedBookmarks));
+    await updateFirestoreData({ bookmarkedRecipes: updatedBookmarks });
   };
     
-  const handleDropOnPlanner = (dateKey, recipe) => {
+  const handleDropOnPlanner = async (dateKey, recipe) => {
     const newPlanner = {...planner};
     const dayRecipes = newPlanner[dateKey] || [];
     if (!dayRecipes.some(r => r.id === recipe.id)) {
         newPlanner[dateKey] = [...dayRecipes, recipe];
-        setPlanner(newPlanner);
-        localStorage.setItem('smart-recipe-planner', JSON.stringify(newPlanner));
+        await updateFirestoreData({ planner: newPlanner });
         showNotification(`${recipe.title} added to your plan.`);
     } else {
         showNotification(`${recipe.title} is already planned for this day.`);
     }
   };
     
-  const removeRecipeFromPlanner = (dateKey, recipeId) => {
+  const removeRecipeFromPlanner = async (dateKey, recipeId) => {
     const newPlanner = {...planner};
     newPlanner[dateKey] = newPlanner[dateKey].filter(r => r.id !== recipeId);
-    setPlanner(newPlanner);
-    localStorage.setItem('smart-recipe-planner', JSON.stringify(newPlanner));
+    await updateFirestoreData({ planner: newPlanner });
   };
 
   const analyzeImageWithAI = async (imageFile) => {
@@ -312,7 +315,7 @@ export default function App() {
     showNotification("AI is analyzing your ingredients...");
     try {
         const base64ImageData = await convertToBase64(imageFile);
-        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        const apiKey = "";
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
         
         const payload = {
@@ -324,7 +327,6 @@ export default function App() {
             }]
         };
 
-        console.log("Sending AI analysis request with payload:", payload);
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -334,7 +336,6 @@ export default function App() {
         if (!response.ok) throw new Error(`API error: ${response.statusText}`);
 
         const result = await response.json();
-        console.log("AI analysis response:", result);
         const ingredientsText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (ingredientsText && ingredientsText !== 'No food items found.') {
@@ -351,37 +352,33 @@ export default function App() {
     }
   };
 
-  const addToGroceryList = () => {
+  const addToGroceryList = async () => {
     if (!selectedRecipe) return;
     const newItems = selectedRecipe.ingredients.filter(ing => !groceryList.some(item => item.name.toLowerCase() === ing.toLowerCase()));
     if (newItems.length > 0) {
       const updatedList = [...groceryList, ...newItems.map(name => ({name, checked: false}))];
-      setGroceryList(updatedList);
-      localStorage.setItem('smart-recipe-grocery', JSON.stringify(updatedList));
+      await updateFirestoreData({ groceryList: updatedList });
       showNotification(`${newItems.length} new item(s) added to your grocery list!`);
     } else {
       showNotification('All ingredients are already on your list.');
     }
   };
     
-  const handleGroceryItemChange = (index, newName) => {
+  const handleGroceryItemChange = async (index, newName) => {
       const updatedList = [...groceryList];
       updatedList[index].name = newName;
-      setGroceryList(updatedList);
-      localStorage.setItem('smart-recipe-grocery', JSON.stringify(updatedList));
+      await updateFirestoreData({ groceryList: updatedList });
   };
     
-  const toggleGroceryItemChecked = (index) => {
+  const toggleGroceryItemChecked = async (index) => {
       const updatedList = [...groceryList];
       updatedList[index].checked = !updatedList[index].checked;
-      setGroceryList(updatedList);
-      localStorage.setItem('smart-recipe-grocery', JSON.stringify(updatedList));
+      await updateFirestoreData({ groceryList: updatedList });
   };
     
-  const removeGroceryItem = (index) => {
+  const removeGroceryItem = async (index) => {
       const updatedList = groceryList.filter((_, i) => i !== index);
-      setGroceryList(updatedList);
-      localStorage.setItem('smart-recipe-grocery', JSON.stringify(updatedList));
+      await updateFirestoreData({ groceryList: updatedList });
   };
 
   const speak = (text) => {
@@ -484,14 +481,17 @@ export default function App() {
 
 
   const renderPage = () => {
+    if (isLoading) {
+        return <div className="flex justify-center items-center min-h-screen text-xl">Loading Your Kitchen...</div>;
+    }
      switch (page) {
-      case 'login': return <LoginPage onLogin={handleLogin} />;
+      case 'login': return <LoginPage onAuthAction={handleAuthAction} />;
       case 'home': return <HomePage ingredientsInput={ingredientsInput} setIngredientsInput={setIngredientsInput} recipes={suggestedRecipes} onSelectRecipe={handleSelectRecipe} onAnalyzeImage={analyzeImageWithAI} isAnalyzing={isAnalyzing} bookmarkedRecipes={bookmarkedRecipes} onToggleBookmark={toggleBookmark} />;
       case 'recipe': return <RecipeDetailPage recipe={selectedRecipe} onBack={() => setPage('home')} onAddToGrocery={addToGroceryList} isCooking={isCooking} startCooking={startCookingAssistant} stopCooking={stopCookingAssistant} currentStep={currentStep} cookingMessage={cookingMessage} isPaused={isPaused} onToggleBookmark={toggleBookmark} isBookmarked={bookmarkedRecipes.some(r => r.id === selectedRecipe?.id)} />;
       case 'grocery': return <GroceryListPage list={groceryList} onItemChange={handleGroceryItemChange} onToggleChecked={toggleGroceryItemChecked} onRemoveItem={removeGroceryItem} onBack={() => setPage('home')} />;
       case 'recipeBook': return <RecipeBookPage bookmarkedRecipes={bookmarkedRecipes} onSelectRecipe={handleSelectRecipe} onToggleBookmark={toggleBookmark}/>;
-      case 'planner': return <PlannerPage planner={planner} onDrop={handleDropOnPlanner} onRemoveRecipe={removeRecipeFromPlanner} allRecipes={mockRecipes} ingredientsInput={ingredientsInput} setIngredientsInput={setIngredientsInput} showNotification={showNotification} />;
-      default: return <LoginPage onLogin={handleLogin} />;
+      case 'planner': return <PlannerPage planner={planner} onDrop={handleDropOnPlanner} onRemoveRecipe={removeRecipeFromPlanner} allRecipes={allRecipes} ingredientsInput={ingredientsInput} setIngredientsInput={setIngredientsInput} showNotification={showNotification} />;
+      default: return <LoginPage onAuthAction={handleAuthAction} />;
     }
   };
 
@@ -499,7 +499,7 @@ export default function App() {
     <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
       <AnimatePresence> {notification && <Notification message={notification} />} </AnimatePresence>
       <div className="container mx-auto p-4 md:p-8 max-w-7xl">
-        {isAuthenticated && <Navbar onNavigate={setPage} onLogout={handleLogout} />}
+        {isAuthenticated && <Navbar onNavigate={setPage} onLogout={handleLogout} userId={userId} />}
         <AnimatePresence mode="wait">
             <motion.div key={page} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.3 }}>
                 {renderPage()}
@@ -512,33 +512,45 @@ export default function App() {
 
 // --- Page Components ---
 
-const Navbar = ({ onNavigate, onLogout }) => (
+const Navbar = ({ onNavigate, onLogout, userId }) => (
     <header className="flex justify-between items-center mb-8 p-4 bg-gray-800 rounded-xl shadow-lg">
         <h1 className="text-2xl md:text-3xl font-bold text-orange-500 cursor-pointer flex items-center gap-2" onClick={() => onNavigate('home')}>
            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
            AI Sous-Chef
         </h1>
-        <nav className="hidden md:flex items-center space-x-6">
-            <a href="#" className="text-lg font-medium text-gray-300 hover:text-orange-500 transition-colors" onClick={() => onNavigate('home')}>Home</a>
-            <a href="#" className="text-lg font-medium text-gray-300 hover:text-orange-500 transition-colors" onClick={() => onNavigate('recipeBook')}>My Recipe Book</a>
-            <a href="#" className="text-lg font-medium text-gray-300 hover:text-orange-500 transition-colors" onClick={() => onNavigate('planner')}>Meal Planner</a>
-            <a href="#" className="text-lg font-medium text-gray-300 hover:text-orange-500 transition-colors" onClick={() => onNavigate('grocery')}>Grocery List</a>
-            <Button onClick={onLogout} className="bg-red-600 hover:bg-red-700 text-white !px-4 !py-2">Logout</Button>
-        </nav>
+        <div className="flex items-center space-x-6">
+            <nav className="hidden md:flex items-center space-x-6">
+                <a href="#" className="text-lg font-medium text-gray-300 hover:text-orange-500 transition-colors" onClick={() => onNavigate('home')}>Home</a>
+                <a href="#" className="text-lg font-medium text-gray-300 hover:text-orange-500 transition-colors" onClick={() => onNavigate('recipeBook')}>My Recipe Book</a>
+                <a href="#" className="text-lg font-medium text-gray-300 hover:text-orange-500 transition-colors" onClick={() => onNavigate('planner')}>Meal Planner</a>
+                <a href="#" className="text-lg font-medium text-gray-300 hover:text-orange-500 transition-colors" onClick={() => onNavigate('grocery')}>Grocery List</a>
+            </nav>
+            <div className="flex items-center gap-4">
+                 <div className="text-xs text-gray-500 hidden sm:block" title="User ID">ID: {userId}</div>
+                 <Button onClick={onLogout} className="bg-red-600 hover:bg-red-700 text-white !px-4 !py-2">Logout</Button>
+            </div>
+        </div>
     </header>
 );
 
-const LoginPage = ({ onLogin }) => {
+const LoginPage = ({ onAuthAction }) => {
     const [isLogin, setIsLogin] = useState(true);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onAuthAction(isLogin, email, password);
+    };
+
     return(
         <div className="flex flex-col items-center justify-center min-h-screen">
             <Card className="w-full max-w-md p-8 text-center">
                 <h1 className="text-4xl font-bold text-orange-500 mb-2">Welcome to AI Sous-Chef</h1>
                 <p className="text-gray-400 mb-8">{isLogin ? 'Log in to continue.' : 'Create an account.'}</p>
-                <form onSubmit={onLogin} className="space-y-6">
-                    {!isLogin && <Input type="text" placeholder="Full Name" required />}
-                    <Input type="email" placeholder="Email" defaultValue="user@example.com" required />
-                    <Input type="password" placeholder="Password" defaultValue="password" required />
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                    <Input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
                     <Button type="submit" className="w-full bg-orange-500 hover:bg-orange-600 text-white text-lg">
                         {isLogin ? 'Login' : 'Sign Up'}
                     </Button>
@@ -724,7 +736,6 @@ const PlannerPage = ({ planner, onDrop, onRemoveRecipe, allRecipes, ingredientsI
         });
         const list = Array.from(allIngredients).sort();
         if (list.length > 0) {
-            // A modal would be better here, but for simplicity, we'll use a notification
             const listString = list.join(', ');
             navigator.clipboard.writeText(listString);
             showNotification('Shopping list copied to clipboard!');
