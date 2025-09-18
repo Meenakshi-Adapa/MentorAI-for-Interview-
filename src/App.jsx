@@ -312,7 +312,7 @@ export default function App() {
     showNotification("AI is analyzing your ingredients...");
     try {
         const base64ImageData = await convertToBase64(imageFile);
-        const apiKey = "";
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
         
         const payload = {
@@ -324,6 +324,7 @@ export default function App() {
             }]
         };
 
+        console.log("Sending AI analysis request with payload:", payload);
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -333,6 +334,7 @@ export default function App() {
         if (!response.ok) throw new Error(`API error: ${response.statusText}`);
 
         const result = await response.json();
+        console.log("AI analysis response:", result);
         const ingredientsText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (ingredientsText && ingredientsText !== 'No food items found.') {
