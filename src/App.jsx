@@ -1,19 +1,132 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { initializeApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithCustomToken, signInAnonymously, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, doc, onSnapshot, setDoc, updateDoc, collection, query, getDocs } from 'firebase/firestore';
+import { 
+  getAuth, 
+  onAuthStateChanged, 
+  signOut,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  doc, 
+  onSnapshot, 
+  setDoc, 
+  updateDoc
+} from 'firebase/firestore';
+import { getStorage } from "firebase/storage";
 
 
 // --- Firebase Initialization ---
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
+// This configuration correctly reads from your local .env file for development.
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+};
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
+// --- DEFAULT RECIPE DATA ---
+const defaultRecipes = [
+  {
+    id: 1,
+    title: 'Classic Spaghetti Bolognese',
+    image: 'https://images.unsplash.com/photo-1621996346565-e326e20f4423?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80',
+    time: 45,
+    ingredients: ['pasta', 'onion', 'tomato', 'ground beef', 'garlic'],
+    steps: [
+      "Heat olive oil in a large skillet over medium-high heat. Add onion and garlic; cook and stir until softened, about 5 minutes.",
+      "Add ground beef and cook until browned and crumbly, 5 to 7 minutes. Drain excess grease.",
+      "Stir in crushed tomatoes, tomato paste, water, sugar, basil, oregano, salt, and pepper. Bring to a simmer, then reduce heat to low, cover, and let simmer for at least 1 hour, stirring occasionally.",
+      "Meanwhile, bring a large pot of lightly salted water to a boil. Cook spaghetti in the boiling water, stirring occasionally, until tender yet firm to the bite, about 12 minutes. Drain.",
+      "Serve sauce over hot spaghetti."
+    ],
+  },
+  {
+    id: 2,
+    title: 'Tomato and Onion Bruschetta',
+    image: 'https://images.unsplash.com/photo-1579992869397-531b2b3b7a8a?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1287&q=80',
+    time: 20,
+    ingredients: ['tomato', 'onion', 'bread', 'garlic', 'basil'],
+    steps: [
+        "Preheat your oven's broiler.",
+        "Combine diced tomatoes, chopped onion, minced garlic, and fresh basil in a medium bowl.",
+        "Drizzle with olive oil and season with salt and pepper to taste. Let it sit for about 10 minutes for the flavors to meld.",
+        "Slice the bread into 1/2-inch thick slices. Arrange on a baking sheet.",
+        "Broil for 1 to 2 minutes per side, or until lightly golden.",
+        "Rub one side of each toast slice with the cut side of a garlic clove.",
+        "Top the toasted bread with the tomato mixture and serve immediately."
+    ],
+  },
+  {
+    id: 3,
+    title: 'Simple Chicken Curry',
+    image: 'https://images.unsplash.com/photo-1565557623262-b9a35c218694?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1374&q=80',
+    time: 35,
+    ingredients: ['chicken', 'onion', 'tomato', 'ginger', 'garlic', 'curry powder'],
+    steps: [
+        "Heat oil in a large pot or Dutch oven over medium heat.",
+        "Add chopped onion and cook until soft and translucent.",
+        "Stir in minced garlic and grated ginger, and cook for another minute until fragrant.",
+        "Add chicken pieces and sear on all sides.",
+        "Sprinkle in curry powder, turmeric, and cumin. Stir to coat the chicken.",
+        "Pour in chopped tomatoes and coconut milk. Season with salt.",
+        "Bring to a simmer, then reduce heat, cover, and cook for 20-25 minutes, or until chicken is cooked through. Garnish with cilantro before serving."
+    ],
+  },
+  {
+    id: 4,
+    title: 'Hearty Lentil Soup',
+    image: 'https://images.unsplash.com/photo-1595460592124-34539c367dc4?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1287&q=80',
+    time: 50,
+    ingredients: ['lentils', 'onion', 'carrot', 'celery', 'tomato', 'garlic'],
+    steps: [
+        "Heat olive oil in a large pot or Dutch oven over medium heat.",
+        "Add chopped onion, carrots, and celery. Cook until softened, about 5-7 minutes.",
+        "Add minced garlic and cook for another minute until fragrant.",
+        "Stir in rinsed lentils, diced tomatoes, vegetable broth, and dried thyme.",
+        "Bring to a boil, then reduce heat and simmer for 30-40 minutes, or until lentils are tender.",
+        "Season with salt and pepper to taste. For a creamier soup, you can use an immersion blender for a few seconds.",
+        "Serve hot, garnished with fresh parsley."
+    ],
+  },
+  {
+    id: 5,
+    title: 'Avocado Toast with Egg',
+    image: 'https://images.unsplash.com/photo-1482049016688-2d3e1b311543?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1310&q=80',
+    time: 10,
+    ingredients: ['bread', 'avocado', 'egg', 'chili flakes'],
+    steps: [
+        "Toast bread slices to your desired level of crispness.",
+        "While the bread is toasting, mash the avocado in a small bowl. Season with salt and pepper.",
+        "Cook an egg to your liking (fried, poached, or scrambled).",
+        "Spread the mashed avocado evenly on the toast.",
+        "Top with the cooked egg and sprinkle with chili flakes. Serve immediately."
+    ],
+  },
+  {
+    id: 6,
+    title: 'Healthy Banana Pancakes',
+    image: 'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1380&q=80',
+    time: 15,
+    ingredients: ['banana', 'egg', 'oats', 'cinnamon'],
+    steps: [
+      "In a blender, combine one ripe banana, two eggs, and 1/2 cup of rolled oats. Add a pinch of cinnamon.",
+      "Blend until the mixture is smooth.",
+      "Heat a non-stick skillet over medium heat and lightly grease with oil or butter.",
+      "Pour small circles of batter onto the skillet and cook for 2-3 minutes per side, or until golden brown.",
+      "Serve with your favorite toppings like maple syrup, fresh berries, or yogurt."
+    ],
+  }
+];
 
 // --- Helper Functions ---
 const convertToBase64 = (file) => new Promise((resolve, reject) => {
@@ -115,7 +228,6 @@ const Notification = ({ message }) => (
 // --- Main App ---
 export default function App() {
   const [page, setPage] = useState('login');
-  const [allRecipes, setAllRecipes] = useState([]);
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [ingredientsInput, setIngredientsInput] = useState('');
   const [suggestedRecipes, setSuggestedRecipes] = useState([]);
@@ -126,8 +238,9 @@ export default function App() {
   const [planner, setPlanner] = useState({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [userId, setUserId] = useState(null);
+  const [allRecipes, setAllRecipes] = useState(defaultRecipes);
   const [isLoading, setIsLoading] = useState(true);
-
+  const [isNewUser, setIsNewUser] = useState(false);
 
   // WOW Factor State
   const [isCooking, setIsCooking] = useState(false);
@@ -136,33 +249,26 @@ export default function App() {
   const [cookingMessage, setCookingMessage] = useState('');
   
   const recognitionRef = useRef(null);
-
-  const showNotification = (message, isError = false) => {
-      // Simple implementation for now
+  
+  const showNotification = (message) => {
       setNotification(message);
       setTimeout(() => setNotification(''), 3000);
   };
 
   useEffect(() => {
-    setIsLoading(true);
-    const authAndSignIn = async () => {
-        try {
-            if (initialAuthToken) {
-                await signInWithCustomToken(auth, initialAuthToken);
-            } else {
-                 // No token, wait for user to login via form
-            }
-        } catch (error) {
-            console.error("Firebase Authentication Error:", error);
-            showNotification("Authentication failed. Please try again.", true);
-        }
-    };
-
-    onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
         if (user) {
             setUserId(user.uid);
             setIsAuthenticated(true);
-            setPage('home');
+            
+            const metadata = user.metadata;
+            if (metadata.creationTime === metadata.lastSignInTime) {
+                setIsNewUser(true);
+                setPage('survey');
+                setIsLoading(false);
+            } else {
+                setPage('home');
+            }
         } else {
             setUserId(null);
             setIsAuthenticated(false);
@@ -170,78 +276,64 @@ export default function App() {
             setIsLoading(false);
         }
     });
-
-    authAndSignIn();
+    return () => unsubscribe();
   }, []);
 
-  // Firestore Data Listeners
+  // Firestore Data Listeners for user-specific data
   useEffect(() => {
-      if (!userId) {
+      if (!userId || isNewUser) {
           setIsLoading(false);
           return;
       };
 
-      const fetchAllData = async () => {
-          setIsLoading(true);
-          // 1. Fetch Recipes (Public)
-          const recipesCollectionRef = collection(db, `artifacts/${appId}/public/data/recipes`);
-          const recipesQuery = query(recipesCollectionRef);
-          try {
-              const recipesSnapshot = await getDocs(recipesQuery);
-              const fetchedRecipes = recipesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-              setAllRecipes(fetchedRecipes);
-              setSuggestedRecipes(fetchedRecipes);
-          } catch (error) {
-              console.error("Error fetching recipes:", error);
-              showNotification("Could not load recipes.", true);
-          }
-
-          // 2. Listen to User Data (Private)
-          const dataDocRef = doc(db, `artifacts/${appId}/users/${userId}/data`, 'userData');
-          const unsubscribe = onSnapshot(dataDocRef, (docSnap) => {
-              if (docSnap.exists()) {
-                  const data = docSnap.data();
-                  setGroceryList(data.groceryList || []);
-                  setBookmarkedRecipes(data.bookmarkedRecipes || []);
-                  setPlanner(data.planner || {});
-              } else {
-                  setDoc(dataDocRef, { groceryList: [], bookmarkedRecipes: [], planner: {} });
-              }
-              setIsLoading(false);
-          }, (error) => {
-              console.error("Error with user data listener:", error);
-              showNotification("Could not sync your data.", true);
-              setIsLoading(false);
-          });
-          
-          return () => unsubscribe();
-      }
-      
-      fetchAllData();
-  }, [userId]);
-
-
-  const handleAuthAction = async (isLogin, email, password) => {
-      try {
-          if (isLogin) {
-              await signInWithEmailAndPassword(auth, email, password);
-              showNotification("Login successful!");
+      setIsLoading(true);
+      const userDocRef = doc(db, `users/${userId}`);
+      const unsubscribeUser = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+              const data = docSnap.data();
+              setGroceryList(data.groceryList || []);
+              setBookmarkedRecipes(data.bookmarkedRecipes || []);
+              setPlanner(data.planner || {});
           } else {
-              await createUserWithEmailAndPassword(auth, email, password);
-              showNotification("Account created successfully!");
+              setDoc(userDocRef, { groceryList: [], bookmarkedRecipes: [], planner: {} });
           }
-      } catch (error) {
-          console.error(`Firebase ${isLogin ? 'Login' : 'Sign Up'} Error:`, error);
-          showNotification(error.message, true);
-      }
+          setIsLoading(false);
+      }, (error) => {
+          console.error("Error listening to user data:", error);
+          showNotification("Could not sync your data.");
+          setIsLoading(false);
+      });
+
+      return () => unsubscribeUser();
+      
+  }, [userId, isNewUser]);
+
+
+  const handleLogin = async (email, password) => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      showNotification(error.message);
+    }
   };
+
+  const handleSignUp = async (email, password) => {
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      showNotification(error.message);
+    }
+  };
+  
+  const handleSurveySubmit = (preferences) => {
+    showNotification("Preferences saved!");
+    setPage('home');
+    setIsNewUser(false);
+  };
+
 
   const handleLogout = () => {
     signOut(auth);
-    setGroceryList([]);
-    setBookmarkedRecipes([]);
-    setPlanner({});
-    setAllRecipes([]);
   };
 
   const handleIngredientSearch = () => {
@@ -251,8 +343,8 @@ export default function App() {
     }
     const searchTerms = ingredientsInput.toLowerCase().split(',').map(term => term.trim());
     const filtered = allRecipes.filter(recipe =>
-      searchTerms.some(term =>
-        recipe.ingredients.some(ing => ing.toLowerCase().includes(term))
+      recipe.ingredients.some(ing => 
+        searchTerms.some(term => ing.toLowerCase().includes(term))
       )
     );
     setSuggestedRecipes(filtered);
@@ -267,9 +359,9 @@ export default function App() {
 
   const updateFirestoreData = async (data) => {
       if (!userId) return;
-      const dataDocRef = doc(db, `artifacts/${appId}/users/${userId}/data`, 'userData');
+      const userDocRef = doc(db, `users/${userId}`);
       try {
-          await setDoc(dataDocRef, data, { merge: true });
+          await setDoc(userDocRef, data, { merge: true });
       } catch (e) {
          console.error("Error updating document: ", e);
       }
@@ -315,7 +407,7 @@ export default function App() {
     showNotification("AI is analyzing your ingredients...");
     try {
         const base64ImageData = await convertToBase64(imageFile);
-        const apiKey = "";
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
         
         const payload = {
@@ -485,13 +577,14 @@ export default function App() {
         return <div className="flex justify-center items-center min-h-screen text-xl">Loading Your Kitchen...</div>;
     }
      switch (page) {
-      case 'login': return <LoginPage onAuthAction={handleAuthAction} />;
+      case 'login': return <LoginPage onLogin={handleLogin} onSignUp={handleSignUp} />;
+      case 'survey': return <SurveyPage onSubmit={handleSurveySubmit} />;
       case 'home': return <HomePage ingredientsInput={ingredientsInput} setIngredientsInput={setIngredientsInput} recipes={suggestedRecipes} onSelectRecipe={handleSelectRecipe} onAnalyzeImage={analyzeImageWithAI} isAnalyzing={isAnalyzing} bookmarkedRecipes={bookmarkedRecipes} onToggleBookmark={toggleBookmark} />;
       case 'recipe': return <RecipeDetailPage recipe={selectedRecipe} onBack={() => setPage('home')} onAddToGrocery={addToGroceryList} isCooking={isCooking} startCooking={startCookingAssistant} stopCooking={stopCookingAssistant} currentStep={currentStep} cookingMessage={cookingMessage} isPaused={isPaused} onToggleBookmark={toggleBookmark} isBookmarked={bookmarkedRecipes.some(r => r.id === selectedRecipe?.id)} />;
       case 'grocery': return <GroceryListPage list={groceryList} onItemChange={handleGroceryItemChange} onToggleChecked={toggleGroceryItemChecked} onRemoveItem={removeGroceryItem} onBack={() => setPage('home')} />;
       case 'recipeBook': return <RecipeBookPage bookmarkedRecipes={bookmarkedRecipes} onSelectRecipe={handleSelectRecipe} onToggleBookmark={toggleBookmark}/>;
       case 'planner': return <PlannerPage planner={planner} onDrop={handleDropOnPlanner} onRemoveRecipe={removeRecipeFromPlanner} allRecipes={allRecipes} ingredientsInput={ingredientsInput} setIngredientsInput={setIngredientsInput} showNotification={showNotification} />;
-      default: return <LoginPage onAuthAction={handleAuthAction} />;
+      default: return <LoginPage onLogin={handleLogin} onSignUp={handleSignUp} />;
     }
   };
 
@@ -499,7 +592,7 @@ export default function App() {
     <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
       <AnimatePresence> {notification && <Notification message={notification} />} </AnimatePresence>
       <div className="container mx-auto p-4 md:p-8 max-w-7xl">
-        {isAuthenticated && <Navbar onNavigate={setPage} onLogout={handleLogout} userId={userId} />}
+        {isAuthenticated && page !== 'survey' && <Navbar onNavigate={setPage} onLogout={handleLogout} userId={userId} />}
         <AnimatePresence mode="wait">
             <motion.div key={page} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.3 }}>
                 {renderPage()}
@@ -526,21 +619,25 @@ const Navbar = ({ onNavigate, onLogout, userId }) => (
                 <a href="#" className="text-lg font-medium text-gray-300 hover:text-orange-500 transition-colors" onClick={() => onNavigate('grocery')}>Grocery List</a>
             </nav>
             <div className="flex items-center gap-4">
-                 <div className="text-xs text-gray-500 hidden sm:block" title="User ID">ID: {userId}</div>
+                 <div className="text-xs text-gray-500 hidden sm:block" title="User ID">{userId}</div>
                  <Button onClick={onLogout} className="bg-red-600 hover:bg-red-700 text-white !px-4 !py-2">Logout</Button>
             </div>
         </div>
     </header>
 );
 
-const LoginPage = ({ onAuthAction }) => {
+const LoginPage = ({ onLogin, onSignUp }) => {
     const [isLogin, setIsLogin] = useState(true);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        onAuthAction(isLogin, email, password);
+        if (isLogin) {
+            onLogin(email, password);
+        } else {
+            onSignUp(email, password);
+        }
     };
 
     return(
@@ -565,6 +662,106 @@ const LoginPage = ({ onAuthAction }) => {
         </div>
     );
 };
+
+const SurveyPage = ({ onSubmit }) => {
+  const [selectedAllergies, setSelectedAllergies] = useState([]);
+  const [customAllergies, setCustomAllergies] = useState('');
+  const [selectedCuisines, setSelectedCuisines] = useState([]);
+  const [customCuisines, setCustomCuisines] = useState('');
+  const [selectedDietary, setSelectedDietary] = useState([]);
+  const [customDietary, setCustomDietary] = useState('');
+
+  const commonAllergies = ['Peanuts', 'Gluten', 'Dairy', 'Eggs', 'Soy', 'Shellfish'];
+  const commonCuisines = ['Italian', 'Indian', 'Mexican', 'Chinese', 'Japanese', 'Thai', 'French', 'American'];
+  const commonDietary = ['Vegetarian', 'Vegan', 'Keto', 'Paleo', 'Gluten-Free', 'Dairy-Free'];
+
+  const handleCheckboxChange = (category, value) => {
+    if (category === 'allergies') {
+      setSelectedAllergies(prev => prev.includes(value) ? prev.filter(item => item !== value) : [...prev, value]);
+    } else if (category === 'cuisines') {
+      setSelectedCuisines(prev => prev.includes(value) ? prev.filter(item => item !== value) : [...prev, value]);
+    } else if (category === 'dietary') {
+      setSelectedDietary(prev => prev.includes(value) ? prev.filter(item => item !== value) : [...prev, value]);
+    }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const allergies = [...selectedAllergies, customAllergies].filter(Boolean).join(', ');
+    const cuisines = [...selectedCuisines, customCuisines].filter(Boolean).join(', ');
+    const dietaryPreferences = [...selectedDietary, customDietary].filter(Boolean).join(', ');
+    onSubmit({ allergies, cuisines, dietaryPreferences });
+  };
+
+  const CheckboxGroup = ({ label, options, selected, onChange, customValue, setCustomValue, customPlaceholder }) => (
+    <div className="mb-6">
+      <label className="block text-gray-300 font-semibold mb-3">{label}</label>
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        {options.map(option => (
+          <label key={option} className="flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selected.includes(option)}
+              onChange={() => onChange(option)}
+              className="sr-only"
+            />
+            <div className={`w-5 h-5 border-2 border-orange-500 rounded mr-3 flex items-center justify-center transition-all ${selected.includes(option) ? 'bg-orange-500' : 'bg-gray-700'}`}>
+              {selected.includes(option) && <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+            </div>
+            <span className="text-gray-200">{option}</span>
+          </label>
+        ))}
+      </div>
+      <Input
+        type="text"
+        placeholder={customPlaceholder}
+        value={customValue}
+        onChange={(e) => setCustomValue(e.target.value)}
+        className="mt-2"
+      />
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen p-4">
+      <Card className="w-full max-w-2xl p-8 text-center">
+        <h1 className="text-4xl font-bold text-orange-500 mb-4">Tell us about your preferences</h1>
+        <p className="text-gray-400 mb-6">Help us personalize your experience by sharing your allergies, favorite cuisines, and dietary preferences.</p>
+        <form onSubmit={handleSubmit} className="space-y-6 text-left">
+          <CheckboxGroup
+            label="Allergies"
+            options={commonAllergies}
+            selected={selectedAllergies}
+            onChange={(value) => handleCheckboxChange('allergies', value)}
+            customValue={customAllergies}
+            setCustomValue={setCustomAllergies}
+            customPlaceholder="Other allergies (comma separated)"
+          />
+          <CheckboxGroup
+            label="Favorite Cuisines"
+            options={commonCuisines}
+            selected={selectedCuisines}
+            onChange={(value) => handleCheckboxChange('cuisines', value)}
+            customValue={customCuisines}
+            setCustomValue={setCustomCuisines}
+            customPlaceholder="Other cuisines (comma separated)"
+          />
+          <CheckboxGroup
+            label="Dietary Preferences"
+            options={commonDietary}
+            selected={selectedDietary}
+            onChange={(value) => handleCheckboxChange('dietary', value)}
+            customValue={customDietary}
+            setCustomValue={setCustomDietary}
+            customPlaceholder="Other dietary preferences (comma separated)"
+          />
+          <Button type="submit" className="w-full bg-orange-500 hover:bg-orange-600 text-white text-lg">Save Preferences</Button>
+        </form>
+      </Card>
+    </div>
+  );
+};
+
 
 const RecipeCard = ({ recipe, onSelect, onToggleBookmark, isBookmarked, isDraggable = false }) => {
     const handleDragStart = (e) => {
@@ -599,7 +796,7 @@ const RecipeCard = ({ recipe, onSelect, onToggleBookmark, isBookmarked, isDragga
                 <div className="p-6 flex-grow flex flex-col" draggable="false" onDragStart={stopPropagation}>
                     <h4 className="font-bold text-xl mb-2 text-gray-100">{recipe.title}</h4>
                     <p className="text-gray-400 text-base mb-4 flex-grow">Ready in {recipe.time} mins.</p>
-                    <div>{recipe.ingredients.slice(0, 3).map(ing => <Tag key={ing} text={ing} />)}</div>
+                    <div>{recipe.ingredients && recipe.ingredients.slice(0, 3).map(ing => <Tag key={ing} text={ing} />)}</div>
                 </div>
             </Card>
         </motion.div>
@@ -748,8 +945,8 @@ const PlannerPage = ({ planner, onDrop, onRemoveRecipe, allRecipes, ingredientsI
         if (!ingredientsInput.trim()) return allRecipes;
         const searchTerms = ingredientsInput.toLowerCase().split(',').map(term => term.trim());
         return allRecipes.filter(recipe =>
-            searchTerms.some(term =>
-                recipe.ingredients.some(ing => ing.toLowerCase().includes(term))
+            recipe.ingredients.some(ing =>
+                searchTerms.some(term => ing.toLowerCase().includes(term))
             )
         );
     }, [ingredientsInput, allRecipes]);
